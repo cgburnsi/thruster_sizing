@@ -1,0 +1,64 @@
+# Claude Code
+.claude/
+
+# Spyder
+.spyproject/
+.spyderproject.cfg
+.spyderproject
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Distribution / packaging
+*.whl
+*.tar.gz
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# VS Code
+.vscode/
+
+# PyCharm
+.idea/
+
+# mypy / type checkers
+.mypy_cache/
+.dmypy.json
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Data files (add/remove extensions as needed)
+*.csv
+*.xlsx
+*.xls
+*.hdf5
+*.h5
+*.dat
+*.npy
+*.npz

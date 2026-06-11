@@ -1,0 +1,42 @@
+# Python dependencies
+#
+# Install with: pip install -r requirements.txt
+#
+# System dependency (not pip-installable):
+#
+
+# Spyder
+spyder
+spyder-kernels==3.1.*
+
+# Computational and Plotting Tools
+numpy>=2.1.2
+matplotlib>=3.9.2
+#graphviz>=0.20
+
+# Scientific Tools
+#scipy>=1.10.0
+#CoolProp
+#pandas
+
+
+
+# Input/Output Tools
+#xlsxwriter>=3.0.0
+
+# Building and Tests
+build
+twine
+pytest
+#pytest-cov>=4.0.0
+#pytest-cov>=4.0.0
+
+# Dependencies
+# Unit conversion
+#git+https://github.com/cgburnsi/unit-converter.git@v0.2.0
+git+https://github.com/cgburnsi/Metronos.git
+
+
+
+
+
