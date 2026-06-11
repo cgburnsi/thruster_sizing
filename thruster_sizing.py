@@ -81,12 +81,12 @@ if __name__ == '__main__':
     Pc_guess = mt.Quantity(100,    'psi')  # Chamber pressure initial guess
     P_a      = mt.Quantity(5,      'Torr') # Ambient pressure
 
-    # Combustion gas properties (ASCENT)
-    eta         = .865
-    k           = 1.2105
-    cstar_ideal = mt.Quantity(1396.0, 'm/s')
-    MW          = 21.725
-    T0          = mt.Quantity(2158.88, 'K')
+    # Combustion gas properties (LOX/LH2, O/F = 5.0)
+    eta         = 0.95
+    k           = 1.26
+    cstar_ideal = mt.Quantity(2350.0, 'm/s')
+    MW          = 11.8
+    T0          = mt.Quantity(3250.0, 'K')
     cstar       = cstar_ideal * eta
 
     # ── Geometry ─────────────────────────────────────────────────────────────
