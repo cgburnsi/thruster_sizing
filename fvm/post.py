@@ -24,18 +24,26 @@ def _iface_states(solver):
 def station_integrals(solver):
     """Mass flow and axial momentum+pressure flux at every i-face.
 
-    Returns a dict of arrays of length ``ni+1``. The mass-flow array doubling
-    as a conservation check is the cheapest useful convergence diagnostic
-    there is: a converged nozzle solution has it flat to within a fraction of
-    a percent.
+    Both are integrated from the solver's own numerical face fluxes, not from
+    cell-centred states. That distinction matters more than it looks: for a
+    conservative scheme at steady state, summing continuity down a column of
+    cells makes the j-face terms telescope to (wall flux) - (axis flux), and
+    both are identically zero -- the wall passes no mass and axis faces carry
+    S = 0. So consecutive stations must report *exactly* the same mass flow,
+    and any visible drift is a measurement artifact rather than physics.
+    Averaging adjacent cell states instead introduces roughly 3% of spurious
+    variation on this geometry, which is enough to look like a real leak.
     """
     g = solver.grid
-    rho, u, v, p = _iface_states(solver)
-    qn = u * g.nx_i + v * g.nr_i
+    W = solver._fill(solver.U)
+    Fi, _, _ = solver.face_fluxes(W)
     dA = TWO_PI * g.S_i
 
-    mdot = np.sum(rho * qn * dA, axis=1)
-    thrust = np.sum((rho * qn * u + (p - solver.bcs.p_amb) * g.nx_i) * dA, axis=1)
+    mdot = np.sum(Fi[0] * dA, axis=1)
+    thrust = np.sum((Fi[1] - solver.bcs.p_amb * g.nx_i) * dA, axis=1)
+
+    rho, u, v, p = _iface_states(solver)
+    qn = u * g.nx_i + v * g.nr_i
     area = np.sum(dA, axis=1)
     p_avg = np.sum(p * dA, axis=1) / np.maximum(area, TINY)
 

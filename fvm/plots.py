@@ -285,17 +285,35 @@ def plot_convergence(solver, ax=None):
 
 
 def plot_mass_conservation(solver, ax=None):
-    """Mass flow through every axial station -- the cheapest convergence check."""
+    """Mass-flow conservation along the nozzle.
+
+    Plotted as deviation from the mean rather than absolute mass flow. The
+    absolute version is flat to a few hundredths of a percent, so an
+    auto-scaled axis zooms into the fifth decimal place and dresses round-off
+    up as though it were a trend.
+    """
     from . import post
     apply_style()
     st = post.station_integrals(solver)
+    md = st["mdot"]
+    mean = md.mean()
+    dev = 100.0 * (md - mean) / mean
+
     if ax is None:
-        _, ax = plt.subplots(figsize=(7.2, 3.4))
-    ax.plot(st["x"] * 1e3, st["mdot"] * 1e6, color=SERIES[0])
+        _, ax = plt.subplots(figsize=(7.6, 3.6))
+    ax.plot(st["x"] * 1e3, dev, color=SERIES[0])
+    ax.axhline(0.0, color=MUTED, lw=1.0, ls=(0, (4, 3)))
     ax.set_xlabel("Axial station, x [mm]")
-    ax.set_ylabel("Mass flow [mg/s]")
-    ax.set_title("Mass flow through each axial station", loc="left")
+    ax.set_ylabel("Deviation from mean [%]")
+    ax.set_title(f"Mass conservation along the nozzle  "
+                 f"(mean {mean * 1e6:.4f} mg/s)", loc="left")
     ax.axvline(solver.grid.contour.x_throat * 1e3, color=AXIS, lw=0.8)
+
+    span = float(np.abs(dev).max())
+    ax.set_ylim(-max(span * 1.6, 0.05), max(span * 1.6, 0.05))
+    ax.annotate(f"peak-to-peak {dev.max() - dev.min():.4f}%",
+                xy=(0.99, 0.06), xycoords="axes fraction", ha="right",
+                color=INK_2, fontsize=8.5)
     return ax.figure
 
 

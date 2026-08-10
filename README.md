@@ -227,12 +227,12 @@ p_amb = 5 Torr, adiabatic wall, laminar. 220 × 80 grid, Roe + van Albada,
 
 | Quantity | CFD | Ideal 1-D | Ratio |
 |---|---|---|---|
-| Thrust | 79.03 mN | 100.41 mN | **0.787** |
-| Mass flow | 0.02265 g/s | 0.02434 g/s | **0.931** (C_d) |
-| Specific impulse | 355.8 s | 420.7 s | **0.846** |
-| Thrust coefficient | 1.416 | 1.799 | 0.787 |
+| Thrust | 77.55 mN | 100.41 mN | **0.772** |
+| Mass flow | 0.02265 g/s | 0.02434 g/s | **0.930** (C_d) |
+| Specific impulse | 349.2 s | 420.7 s | **0.830** |
+| Thrust coefficient | 1.389 | 1.799 | 0.772 |
 
-**The sizing tool over-predicts thrust by 27%.** That is the headline: at this
+**The sizing tool over-predicts thrust by 29%.** That is the headline: at this
 scale the viscous loss is not a correction, it is a first-order effect, and no
 choice of C\* efficiency in the algebraic tool would have revealed it.
 
@@ -262,11 +262,21 @@ roughly `1/C_d`. The discharge coefficient is the physical quantity.
 
 | | |
 |---|---|
-| Mass error, inlet vs exit | 0.036% |
-| Mass spread, throat to exit | 2.4% (worst single station is the throat face itself) |
-| Momentum balance residual | 1.9% of thrust — against a wall pressure force 576× the thrust |
+| Mass error, inlet vs exit | 0.021% |
+| Mass spread, throat to exit | 0.021% |
+| Momentum balance residual | 0.020% of thrust — against a wall pressure force 588× the thrust |
 | Max wall y⁺ | 0.18 |
-| Grid sensitivity | 160 × 60 gave 79.4 mN vs 79.0 mN here (0.5%) |
+| Grid sensitivity | 160 × 60 vs 220 × 80 agree on thrust to ~0.5% |
+
+Mass flow and thrust are integrated from the solver's **own numerical face
+fluxes**, not from cell-centred states. For a conservative scheme at steady
+state, summing continuity down a column of cells makes the j-face terms
+telescope to (wall flux) − (axis flux), and both vanish identically — the wall
+passes no mass, and axis faces carry `S = 0`. Consecutive stations must
+therefore report exactly the same mass flow. Measuring from averaged cell
+states instead injects ~3% of spurious variation, enough to look like a real
+leak; it also left a 1.9% momentum-balance residual that was pure measurement
+error. Both drop to ~0.02% when the fluxes are integrated consistently.
 
 Figures and a full summary land in `out/` (`nozzle_visc_RESULTS.md` plus PNGs).
 

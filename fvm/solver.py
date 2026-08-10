@@ -145,6 +145,26 @@ class NozzleSolver:
         exercised on a prescribed state without the boundary conditions
         rewriting it -- see the free-stream preservation test.
         """
+        grid, ng = self.grid, self.ng
+        ni, nj = grid.ni, grid.nj
+        Fi, Fj, tau_tt = self.face_fluxes(W)
+
+        R = (Fi[:, 1:, :] * grid.S_i[1:, :] - Fi[:, :-1, :] * grid.S_i[:-1, :]
+             + Fj[:, :, 1:] * grid.S_j[:, 1:] - Fj[:, :, :-1] * grid.S_j[:, :-1])
+
+        p_cell = W[3, ng:ng + ni, ng:ng + nj]
+        R[2] -= (p_cell - tau_tt) * grid.A_planar
+        return R
+
+    def face_fluxes(self, W):
+        """Total flux (inviscid minus viscous) on both face families.
+
+        These are the fluxes the update actually uses, so integrating them is
+        the only self-consistent way to measure mass flow and thrust. Summing
+        cell-centred states over a station instead introduces a quadrature
+        error of its own, which on this geometry shows up as a spurious few
+        per cent of apparent mass-flow variation along the nozzle.
+        """
         grid, gas, ng = self.grid, self.gas, self.ng
         ni, nj = grid.ni, grid.nj
 
@@ -174,13 +194,7 @@ class NozzleSolver:
             Fj = Fj - Fvj
         else:
             tau_tt = 0.0
-
-        R = (Fi[:, 1:, :] * grid.S_i[1:, :] - Fi[:, :-1, :] * grid.S_i[:-1, :]
-             + Fj[:, :, 1:] * grid.S_j[:, 1:] - Fj[:, :, :-1] * grid.S_j[:, :-1])
-
-        p_cell = W[3, ng:ng + ni, ng:ng + nj]
-        R[2] -= (p_cell - tau_tt) * grid.A_planar
-        return R
+        return Fi, Fj, tau_tt
 
     # -- time step --------------------------------------------------------
     def local_timestep(self, U, cfl):
