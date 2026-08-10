@@ -62,3 +62,9 @@ htmlcov/
 *.dat
 *.npy
 *.npz
+
+# FVM solver run artefacts (checkpoints, figures, logs)
+out/
+scratch/
+*.log
+*.err
