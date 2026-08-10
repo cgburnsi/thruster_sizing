@@ -20,6 +20,7 @@ planar area, not the r-weighted volume.
 Note that the symmetry axis needs no special flux treatment. Faces lying on
 r = 0 have ``S = 0``, so their flux contribution vanishes identically.
 """
+import os
 import time
 
 import numpy as np
@@ -267,7 +268,15 @@ class NozzleSolver:
         n = d[0].size
         return np.sqrt(np.sum(d * d, axis=(1, 2)) / n)
 
-    def run(self, max_iter=20000, tol=1e-6, print_every=250, callback=None):
+    def run(self, max_iter=20000, tol=1e-6, print_every=250, callback=None,
+            checkpoint_every=0, checkpoint_path=None):
+        """Iterate toward steady state.
+
+        ``checkpoint_every`` writes a restart file periodically. Long runs are
+        worth checkpointing for the obvious reason -- a run killed at minute 50
+        of 54 should not cost 50 minutes -- and the file is small, so there is
+        little reason not to.
+        """
         t0 = time.time()
         if not self.history:
             print(f"{'iter':>7} {'res(rho)':>12} {'drop':>10} "
@@ -290,6 +299,14 @@ class NozzleSolver:
                     self.cfl_start + (self.iter / max(self.cfl_ramp, 1)) * (self.cfl - self.cfl_start)
                 print(f"{self.iter:>7d} {r:>12.4e} {drop:>10.3e} "
                       f"{dt.min():>11.3e} {cfl:>6.2f} {time.time() - t0:>9.1f}")
+            if (checkpoint_every and checkpoint_path
+                    and self.iter % checkpoint_every == 0):
+                # Write to a temporary file and replace, so an interruption
+                # mid-write cannot leave a truncated checkpoint behind.
+                tmp = str(checkpoint_path) + ".tmp.npz"
+                self.save(tmp)
+                os.replace(tmp, checkpoint_path)
+
             if callback is not None:
                 callback(self)
             if drop < tol:

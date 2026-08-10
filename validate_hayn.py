@@ -77,6 +77,10 @@ def main():
     ap.add_argument('--out', default=None)
     ap.add_argument('--print-every', type=int, default=2000)
     ap.add_argument('--no-plots', action='store_true')
+    ap.add_argument('--checkpoint-every', type=int, default=1000,
+                    help='write a restart file every N iterations (0 disables)')
+    ap.add_argument('--fresh', action='store_true',
+                    help='ignore any existing checkpoint and start over')
     args = ap.parse_args()
 
     np.seterr(all='ignore')
@@ -106,7 +110,12 @@ def main():
     solver = NozzleSolver(grid, gas, bcs, flux='roe', limiter='vanalbada',
                           viscous=not args.euler, cfl=args.cfl)
     solver.initialize(quasi1d.initial_field(grid, gas, p0, T0, p_amb))
-    solver.run(max_iter=args.iters, tol=args.tol, print_every=args.print_every)
+    ckpt = out + '.npz'
+    if os.path.exists(ckpt) and not args.fresh:
+        solver.load(ckpt)
+        print(f'resuming from {ckpt} at iteration {solver.iter}')
+    solver.run(max_iter=args.iters, tol=args.tol, print_every=args.print_every,
+               checkpoint_every=args.checkpoint_every, checkpoint_path=ckpt)
 
     os.makedirs(os.path.dirname(out) or '.', exist_ok=True)
     solver.save(out + '.npz')

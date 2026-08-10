@@ -83,6 +83,8 @@ def main():
     ap.add_argument('--restart', default=None)
     ap.add_argument('--no-plots', action='store_true')
     ap.add_argument('--print-every', type=int, default=500)
+    ap.add_argument('--checkpoint-every', type=int, default=1000,
+                    help='write a restart file every N iterations (0 disables)')
     args = ap.parse_args()
 
     np.seterr(all='ignore')
@@ -111,7 +113,9 @@ def main():
     else:
         solver.initialize(quasi1d.initial_field(grid, gas, bcs.p0, bcs.T0, bcs.p_amb))
 
-    solver.run(max_iter=args.iters, tol=args.tol, print_every=args.print_every)
+    solver.run(max_iter=args.iters, tol=args.tol, print_every=args.print_every,
+               checkpoint_every=args.checkpoint_every,
+               checkpoint_path=args.out + '.npz')
 
     os.makedirs(os.path.dirname(args.out) or '.', exist_ok=True)
     solver.save(args.out + '.npz')
