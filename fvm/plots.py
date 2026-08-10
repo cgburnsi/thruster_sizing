@@ -35,7 +35,7 @@ CMAP_ORANGE = LinearSegmentedColormap.from_list("seq_orange", _ORANGE)
 FIELD_CMAP = {"T": CMAP_ORANGE}
 
 FIELD_LABEL = {
-    "M": "Mach number", "p": "Static pressure [bar]", "T": "Temperature [K]",
+    "M": "Mach number", "p": "Static pressure [bar]", "T": "Static temperature [K]",
     "rho": "Density [kg/m$^3$]", "u": "Axial velocity [m/s]",
     "v": "Radial velocity [m/s]", "speed": "Speed [m/s]",
 }
@@ -246,9 +246,22 @@ def plot_exit_profile(solver, ax=None):
     ax[0].set_ylabel("Radius, r [mm]")
     ax[0].set_title("Exit-plane Mach profile", loc="left")
 
-    ax[1].plot(f["T"][-1], r, color=SERIES[1], marker="o", ms=3.0)
+    # Show static and total temperature together. They differ by ~1600 K here,
+    # and plotting only the static one invites the reading that the wall
+    # carries more energy than the core -- it carries less, it just cannot
+    # move, so none of its energy is kinetic.
+    Tt = f["T"][-1] + (f["u"][-1] ** 2 + f["v"][-1] ** 2) / (2.0 * solver.gas.cp)
+    ax[1].plot(f["T"][-1], r, color=SERIES[1], marker="o", ms=3.0,
+               label="Static, $T$")
+    ax[1].plot(Tt, r, color=SERIES[2], label="Total, $T_0 = T + q^2/2c_p$")
+    ax[1].axvline(solver.bcs.T0, color=MUTED, lw=1.2, ls=(0, (4, 3)))
+    ax[1].annotate(f"chamber $T_0$ = {solver.bcs.T0:.0f} K",
+                   xy=(solver.bcs.T0, r[0]), xytext=(-6, 2),
+                   textcoords="offset points", ha="right", rotation=90,
+                   color=INK_2, fontsize=8)
     ax[1].set_xlabel("Temperature [K]")
     ax[1].set_title("Exit-plane temperature profile", loc="left")
+    ax[1].legend(loc="lower left")
     for a in ax:
         a.axhline(rw, color=INK, lw=1.0)
         a.annotate("wall", xy=(a.get_xlim()[0], rw), xytext=(4, -10),
