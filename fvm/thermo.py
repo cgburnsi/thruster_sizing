@@ -110,3 +110,10 @@ class PerfectGas:
 #: LOX/LH2 at O/F = 5.0 -- the propellant combination used by thruster_sizing.py
 LOX_LH2_OF5 = dict(gamma=1.26, MW=11.8, Pr=0.6,
                    mu_ref=1.0e-4, T_mu_ref=3250.0, mu_law="power", omega=0.7)
+
+#: Cold gaseous nitrogen. This is the working fluid in Hayn's micronozzle
+#: experiments (NASA TM-77730), so it is what the validation case needs.
+#: Sutherland rather than a power law, because the temperature range is
+#: modest and Sutherland is accurate for N2 near ambient.
+COLD_N2 = dict(gamma=1.4, MW=28.0134, Pr=0.72,
+               mu_ref=1.78e-5, T_mu_ref=300.0, mu_law="sutherland", S_mu=111.0)

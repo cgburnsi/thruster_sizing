@@ -23,7 +23,7 @@ Typical use::
     print(post.report(sol))
 """
 
-from .thermo import PerfectGas, LOX_LH2_OF5, G0, R_UNIVERSAL
+from .thermo import PerfectGas, LOX_LH2_OF5, COLD_N2, G0, R_UNIVERSAL
 from .geometry import NozzleContour, ConicalNozzle, BellNozzle
 from .grid import Grid
 from .bc import BoundaryConditions
@@ -31,7 +31,7 @@ from .solver import NozzleSolver
 from . import quasi1d, post, riemann, reconstruct, viscous
 
 __all__ = [
-    "PerfectGas", "LOX_LH2_OF5", "G0", "R_UNIVERSAL",
+    "PerfectGas", "LOX_LH2_OF5", "COLD_N2", "G0", "R_UNIVERSAL",
     "NozzleContour", "ConicalNozzle", "BellNozzle",
     "Grid", "BoundaryConditions", "NozzleSolver",
     "quasi1d", "post", "riemann", "reconstruct", "viscous",
