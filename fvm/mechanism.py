@@ -313,8 +313,18 @@ class Mechanism:
 # ---------------------------------------------------------------------------
 # hydrazine
 # ---------------------------------------------------------------------------
-H_F_N2H4_LIQUID = 50.63e6      # J/kmol, liquid at 298.15 K
-H_VAP_N2H4 = 44.72e6           # J/kmol
+#: Enthalpy of formation of *liquid* hydrazine at 298.15 K [J/kmol].
+#: The bed is fed liquid, so vaporisation is a real energy debt the
+#: decomposition has to pay before it heats anything.
+H_F_N2H4_LIQUID = 50.63e6
+
+#: Vaporisation enthalpy is *derived*, not quoted, so that
+#: ``h_f(liquid) + h_vap`` always equals the gas-phase species enthalpy the
+#: reactions are written against. Quoting both independently left a 0.17
+#: kJ/mol inconsistency against the CEA value of 95.18 -- small, but there is
+#: no reason to carry a redundant constant that can drift.
+H_VAP_N2H4 = chem.species("N2H4").h_formation() - H_F_N2H4_LIQUID
+
 CP_N2H4_LIQUID = 0.7332 * 4186.8       # J/(kg*K) -- Kesten's CFL, 0.7332 Btu/lb-degR
 
 #: Kesten's parameters, in his units. Converted on construction.

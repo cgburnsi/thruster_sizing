@@ -8,6 +8,9 @@ property values rather than against itself.
 Reference values are standard textbook/JANAF numbers, quoted to the precision
 they are usually tabulated at, with tolerances set accordingly.
 """
+import re
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -170,3 +173,49 @@ def test_gamma_falls_as_temperature_rises():
 def test_unknown_species_raises_with_a_useful_message():
     with pytest.raises(KeyError, match="no built-in data"):
         chem.species("Unobtainium")
+
+
+# -- validation against NASA CEA's own thermodynamic database ---------------
+CEA_THERMO = Path(__file__).resolve().parents[1] / (
+    "docs/kesten_claude/old_code/reactor/thermoprop/raw/THERMO.INP")
+
+
+def _cea_reference():
+    """Parse molecular weight and Hf298 out of CEA's thermo.inp header lines.
+
+    Only the two-line header per species is read: the NASA-9 coefficients CEA
+    uses are a different functional form from the NASA-7 table here, but MW and
+    the formation enthalpy are directly comparable and are what a transcription
+    error would corrupt.
+    """
+    out = {}
+    lines = CEA_THERMO.read_text(encoding="utf-8", errors="replace").splitlines()
+    for i, ln in enumerate(lines):
+        m = re.match(r"^([A-Za-z0-9()*+\-]+)\s{2,}", ln)
+        if not m or i + 1 >= len(lines) or not re.match(r"^\s*\d", lines[i + 1]):
+            continue
+        try:
+            out[m.group(1)] = (float(lines[i + 1][52:65]),
+                               float(lines[i + 1][65:80]))
+        except ValueError:
+            pass
+    return out
+
+
+@pytest.mark.skipif(not CEA_THERMO.exists(),
+                    reason="CEA thermo.inp not present in docs/")
+def test_builtin_data_agrees_with_cea_database():
+    """The built-in table is transcribed; CEA's is authoritative."""
+    ref = _cea_reference()
+    checked = 0
+    for name in sorted(chem._DATA):
+        if name not in ref:
+            continue
+        mw_ref, hf_ref = ref[name]
+        s = chem.species(name)
+        assert s.MW == pytest.approx(mw_ref, rel=1e-5), f"{name} molecular weight"
+        # Hf298 is in J/mol in the file, MJ/kmol here -- numerically the same.
+        assert s.h_formation() / 1e6 == pytest.approx(hf_ref / 1000.0, abs=0.1), \
+            f"{name} formation enthalpy"
+        checked += 1
+    assert checked >= 5, "expected to find most species in the CEA file"
