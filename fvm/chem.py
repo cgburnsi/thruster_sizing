@@ -186,35 +186,45 @@ class Mixture:
         return f"Mixture({', '.join(self.names)})"
 
 
+_ATOMIC = {"H": 1.00794, "C": 12.0107, "N": 14.0067, "O": 15.9994,
+           "AR": 39.948, "HE": 4.002602, "S": 32.065}
+
+
 # ---------------------------------------------------------------------------
 # Built-in species data. Pinned by tests -- see the module docstring.
 # ---------------------------------------------------------------------------
+#: Species are stored with their *elemental composition*, not a molecular
+#: weight, and MW is computed from a single atomic table. Quoting MWs directly
+#: mixes atomic-weight conventions between species -- an early revision had
+#: NH3 on H = 1.00797 and N2H4 on H = 1.00794, which broke mass conservation
+#: in the reaction stoichiometry by a few parts per million. Deriving them
+#: makes sum(nu_i MW_i) = 0 exact by construction.
 _DATA = {
-    "N2": (28.0134,
+    "N2": ({"N": 2},
            [3.298677e0, 1.4082404e-3, -3.963222e-6, 5.641515e-9, -2.444854e-12,
             -1.0208999e3, 3.950372e0],
            [2.92664e0, 1.4879768e-3, -5.68476e-7, 1.0097038e-10, -6.753351e-15,
             -9.227977e2, 5.980528e0],
            (300.0, 1000.0, 5000.0)),
-    "H2": (2.01594,
+    "H2": ({"H": 2},
            [3.298124e0, 8.249442e-4, -8.143015e-7, -9.475434e-11, 4.134872e-13,
             -1.012521e3, -3.294094e0],
            [2.991423e0, 7.000644e-4, -5.633829e-8, -9.231578e-12, 1.582752e-15,
             -8.35034e2, -1.35511e0],
            (300.0, 1000.0, 5000.0)),
-    "NH3": (17.03061,
+    "NH3": ({"N": 1, "H": 3},
             [4.2860274e0, -4.660523e-3, 2.1715133e-5, -2.2808887e-8, 8.2638046e-12,
              -6.7417285e3, -6.2537277e-1],
             [2.7170969e0, 5.5685644e-3, -1.7688659e-6, 2.6741782e-10, -1.5273113e-14,
              -6.5845128e3, 6.0928908e0],
             (200.0, 1000.0, 6000.0)),
-    "H2O": (18.01528,
+    "H2O": ({"H": 2, "O": 1},
             [4.19864056e0, -2.0364341e-3, 6.52040211e-6, -5.48797062e-9, 1.77197817e-12,
              -3.02937267e4, -8.49032208e-1],
             [3.03399249e0, 2.17691804e-3, -1.64072518e-7, -9.7041987e-11, 1.68200992e-14,
              -3.00042971e4, 4.9667701e0],
             (200.0, 1000.0, 3500.0)),
-    "O2": (31.9988,
+    "O2": ({"O": 2},
            [3.78245636e0, -2.99673416e-3, 9.84730201e-6, -9.68129509e-9, 3.24372837e-12,
             -1.06394356e3, 3.65767573e0],
            [3.28253784e0, 1.48308754e-3, -7.57966669e-7, 2.09470555e-10, -2.16717794e-14,
@@ -226,7 +236,7 @@ _DATA = {
 #: species; the enthalpy of formation is the number that matters most for bed
 #: energetics, and it is pinned by test against the accepted +95.4 kJ/mol.
 _DATA["N2H4"] = (
-    32.04516,
+    {"N": 2, "H": 4},
     [3.83472149e0, -6.49129555e-4, 3.76848463e-5, -5.00709182e-8, 2.03362064e-11,
      1.00893925e4, 5.7527203e0],
     [4.93957357e0, 8.75017187e-3, -2.99399058e-6, 4.67278418e-10, -2.73068599e-14,
@@ -234,14 +244,30 @@ _DATA["N2H4"] = (
     (200.0, 1000.0, 6000.0))
 
 
-def species(name):
-    """Look up a built-in species by name."""
+def composition(name):
+    """Elemental composition of a built-in species, e.g. ``{"N": 2, "H": 4}``."""
     try:
-        MW, low, high, rng = _DATA[name]
+        return dict(_DATA[name][0])
     except KeyError:
         raise KeyError(f"no built-in data for {name!r}; "
                        f"have {sorted(_DATA)} (or use load_chemkin)") from None
-    return Species(name, MW, low, high, rng)
+
+
+def molecular_weight(comp):
+    """Molecular weight [kg/kmol] from an elemental composition."""
+    return sum(_ATOMIC[el.upper()] * n for el, n in comp.items())
+
+
+def species(name):
+    """Look up a built-in species by name."""
+    try:
+        comp, low, high, rng = _DATA[name]
+    except KeyError:
+        raise KeyError(f"no built-in data for {name!r}; "
+                       f"have {sorted(_DATA)} (or use load_chemkin)") from None
+    sp = Species(name, molecular_weight(comp), low, high, rng)
+    sp.composition = dict(comp)
+    return sp
 
 
 def mixture(names, Y=None):
@@ -283,10 +309,6 @@ def load_chemkin(path, names=None):
             raise KeyError(f"{path} lacks species {missing}")
         return [out[n] for n in names]
     return out
-
-
-_ATOMIC = {"H": 1.00794, "C": 12.0107, "N": 14.0067, "O": 15.9994,
-           "AR": 39.948, "HE": 4.002602, "S": 32.065}
 
 
 def _elemental_MW(field):

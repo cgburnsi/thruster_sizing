@@ -113,8 +113,17 @@ def test_enthalpy_is_continuous_across_the_polynomial_switch():
 def test_mixture_molecular_weight():
     m = chem.mixture(["N2", "H2"])
     Y = m.from_moles({"N2": 1.0, "H2": 3.0})
-    expected = (28.0134 + 3 * 2.01594) / 4.0
-    assert m.MW(Y) == pytest.approx(expected, rel=1e-10)
+    # Derived from the species themselves rather than hardcoded, so the
+    # expectation follows the atomic-weight table instead of drifting from it.
+    expected = (chem.species("N2").MW + 3 * chem.species("H2").MW) / 4.0
+    assert m.MW(Y) == pytest.approx(expected, rel=1e-12)
+
+
+def test_molecular_weights_are_derived_from_one_atomic_table():
+    """Species MWs must be additive over elements, or stoichiometry leaks mass."""
+    for name in sorted(chem._DATA):
+        s = chem.species(name)
+        assert s.MW == pytest.approx(chem.molecular_weight(s.composition), rel=1e-14)
 
 
 def test_mole_and_mass_fraction_roundtrip():
