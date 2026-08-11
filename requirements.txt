@@ -15,7 +15,9 @@ matplotlib>=3.9.2
 #graphviz>=0.20
 
 # Scientific Tools
-#scipy>=1.10.0
+# scipy supplies the stiff ODE integrator the catalyst bed needs: hydrazine
+# decomposition completes in well under a millimetre of a 76 mm bed.
+scipy>=1.10.0
 #CoolProp
 #pandas
 
