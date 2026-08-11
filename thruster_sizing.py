@@ -2,6 +2,9 @@
 import numpy as np
 import metronos as mt
 
+from fvm.catbed import CatalystBed, ReticulatedFoam
+from fvm.mechanism import HydrazineShell405
+
 
 def _central_diff(f, x, h_rel=1e-6):
     h = abs(x) * h_rel + 1e-12
@@ -81,12 +84,24 @@ if __name__ == '__main__':
     Pc_guess = mt.Quantity(100,    'psi')  # Chamber pressure initial guess
     P_a      = mt.Quantity(5,      'Torr') # Ambient pressure
 
-    # Combustion gas properties (LOX/LH2, O/F = 5.0)
-    eta         = 0.95
-    k           = 1.26
-    cstar_ideal = mt.Quantity(2350.0, 'm/s')
-    MW          = 11.8
-    T0          = mt.Quantity(3250.0, 'K')
+    # ── Propellant: catalytic hydrazine ──────────────────────────────────────
+    # Sourced from fvm.mechanism rather than hardcoded, so this tool and the
+    # bed/nozzle chain cannot drift apart. The single design variable is the
+    # ammonia dissociation fraction: it sets T0, molecular weight and gamma
+    # together, and c* peaks at partial dissociation (see
+    # HydrazineShell405.chamber_conditions).
+    #
+    # X = 0.84 is what fvm.thruster predicts for this bed and flow; run
+    # run_thruster.py to recompute it for a different bed or mass flow rather
+    # than guessing.
+    X_dissociation = 0.84
+    eta            = 0.95          # c* efficiency, empirical
+    _chamber       = HydrazineShell405().chamber_conditions(X_dissociation)
+
+    k           = _chamber['gamma']
+    MW          = _chamber['MW']
+    T0          = mt.Quantity(_chamber['T'], 'K')
+    cstar_ideal = mt.Quantity(_chamber['cstar'], 'm/s')
     cstar       = cstar_ideal * eta
 
     # ── Geometry ─────────────────────────────────────────────────────────────
@@ -133,20 +148,29 @@ if __name__ == '__main__':
     print("-" * 80)
 
     # ── Catalyst bed sizing ───────────────────────────────────────────────────
-    A_target   = 0.75
-    d_foam     = mt.Quantity(8.3, 'mm').to('m').value
-    L_foam     = mt.Quantity(20,  'mm').to('m').value
-    A_foam     = mt.Quantity(np.pi * 8.3**2 / 4, 'mm^2').to('m^2').value
-    V_foam     = A_foam * L_foam
-    V_foam_cm3 = mt.Quantity(V_foam, 'm^3').to('cm^3').value
+    # Uses fvm.catbed so the geometry matches what the plug-flow reactor
+    # integrates. The foam surface-area correlation is unchanged from the
+    # original hand calculation, a_v = 1300 (PPI/20)^1.3, and reproduces it.
+    PPI    = 60
+    d_foam = mt.Quantity(8.3, 'mm').to('m').value
+    L_foam = mt.Quantity(20,  'mm').to('m').value
+    bed    = CatalystBed.uniform(d_foam, L_foam, ReticulatedFoam(ppi=PPI))
 
-    PPI        = 60
-    S_v        = 1300 * (PPI / 20)**1.3   # [m^2/m^3]
-    A_total    = S_v * V_foam
-    S_v_target = A_target / V_foam
+    # Bed loading is a mass flux, mdot/A. The mass flow is the one solved for
+    # above, not an independently assumed value.
+    loading      = bed.mass_flux(m_dot)                 # kg/(m^2 s)
+    loading_eng  = bed.loading_lb_in2_s(m_dot)          # lb/(in^2 s)
+    residence    = bed.residence_time(m_dot, rho=chamber_press / (8314.462618 / MW * T0.to('K').value))
 
-    mdot       = mt.Quantity(0.4713, 'g/s').to('kg/s').value
-    loading    = A_foam / mdot
+    print("\nCatalyst Bed")
+    print("-" * 80)
+    print(bed.summary())
+    print(f"{'  bed loading':<34}{loading:>12.3f}  kg/m^2-s"
+          f"   ({loading_eng:.4f} lb/in^2-s)")
+    print(f"{'  residence time (gas, nominal)':<34}{residence * 1e3:>12.3f}  ms")
+    print("  Shell 405 practice is roughly 0.02-0.05 lb/in^2-s; below that band")
+    print("  favours complete decomposition at the cost of bed volume and mass.")
+    print("-" * 80)
 
     # ── Chamber wall thickness ────────────────────────────────────────────────
     yield_strength        = mt.Quantity(100, 'MPa').to('Pa').value

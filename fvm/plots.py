@@ -344,3 +344,50 @@ def save_all(solver, prefix="out/nozzle", ideal=None, dpi=140):
         plt.close(fig)
         paths.append(path)
     return paths
+
+
+def plot_bed_profiles(solution, prefix=None, axes=None, dpi=140):
+    """Axial profiles through the catalyst bed.
+
+    Four panels, chosen to show the two competing reactions rather than just
+    the outputs: species, the gas and catalyst temperatures (which separate
+    sharply where decomposition is fastest), dissociation, and pressure.
+    """
+    apply_style()
+    z = solution.z * 1e3
+
+    if axes is None:
+        fig, axes = plt.subplots(2, 2, figsize=(10.0, 6.4), sharex=True)
+    a = axes.ravel()
+
+    for k, name in enumerate(("N2H4", "NH3", "N2", "H2")):
+        a[0].plot(z, solution.species(name), color=SERIES[k], label=name)
+    a[0].set_ylabel("Mass fraction")
+    a[0].set_title("Composition", loc="left")
+    a[0].legend(loc="center right")
+
+    a[1].plot(z, solution.T_gas, color=SERIES[0], label="Gas")
+    a[1].plot(z, solution.T_solid, color=SERIES[1], label="Catalyst")
+    a[1].set_ylabel("Temperature [K]")
+    a[1].set_title("Gas and catalyst temperature", loc="left")
+    a[1].legend(loc="best")
+
+    a[2].plot(z, solution.dissociation, color=SERIES[2])
+    a[2].set_ylabel("Ammonia dissociation, X")
+    a[2].set_xlabel("Axial position, z [mm]")
+    a[2].set_title("Dissociation", loc="left")
+    a[2].set_ylim(0.0, 1.0)
+
+    a[3].plot(z, solution.p / 1e5, color=SERIES[3])
+    a[3].set_ylabel("Pressure [bar]")
+    a[3].set_xlabel("Axial position, z [mm]")
+    a[3].set_title("Pressure", loc="left")
+
+    fig = a[0].figure
+    fig.tight_layout()
+    if prefix:
+        path = f"{prefix}_bed.png"
+        fig.savefig(path, dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+        return path
+    return fig

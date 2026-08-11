@@ -1,6 +1,7 @@
 # Thruster Sizing
 
-Two tools for small chemical thrusters:
+Modelling tools for a small **catalytic monopropellant thruster** — liquid
+hydrazine over a Shell 405 bed, expanded through a 0.29 mm throat.
 
 1. **`thruster_sizing.py`** — algebraic sizing. Given a target thrust and nozzle
    geometry, solve for exit Mach number and chamber pressure, then report the
@@ -8,11 +9,18 @@ Two tools for small chemical thrusters:
 2. **`fvm/`** — an axisymmetric Navier–Stokes finite-volume solver that
    simulates the flowfield the sizing tool assumes, and reports what the
    viscous losses actually cost.
+3. **`fvm/` (reacting)** — a catalyst bed model: multi-species thermodynamics,
+   a propellant-agnostic reaction mechanism, bed packing and pressure drop, and
+   a 1-D two-temperature reacting plug-flow reactor, coupled to the nozzle so
+   the chain runs from liquid feed to thrust.
 
-The second exists because the first cannot see the dominant loss mechanism at
-this scale. At a 0.29 mm throat the throat Reynolds number is about **1200**:
-the boundary layer is a large fraction of the passage, and inviscid
-sizing over-predicts thrust substantially. See [Results](#results-for-the-baseline-thruster).
+The CFD solver exists because algebraic sizing cannot see the dominant loss
+mechanism at this scale. At a 0.29 mm throat the boundary layer occupies a
+large fraction of the passage and inviscid sizing over-predicts thrust. How
+badly depends strongly on the propellant, because that sets the Reynolds
+number: **Re ≈ 6,200** for catalytic hydrazine at the chamber conditions the
+bed model predicts, against 1,160 for the LOX/LH2 the solver was first
+exercised on. See [Results](#results-for-the-baseline-thruster).
 
 The solver is [verified](#verification) against analytic solutions and
 [validated](#validation-against-measurement) against measured micronozzle data
@@ -29,6 +37,7 @@ pip install -r requirements.txt
 python thruster_sizing.py                 # algebraic sizing
 python run_fvm_nozzle.py                  # CFD, default 200 x 80 grid
 python run_fvm_nozzle.py --euler          # inviscid, for comparison
+python run_thruster.py                    # bed + nozzle coupled, liquid feed to thrust
 python validate_hayn.py --pc 10           # validation vs NASA TM-77730
 pytest -m "not slow"                       # fast verification tests
 ```
@@ -55,16 +64,30 @@ Edit the inputs at the top of the `__main__` block and run.
 
 ### Propellant
 
-Defaults are **LOX/LH2 at O/F = 5.0**, from thermochemical equilibrium (e.g.
-NASA CEA). To change propellant, update `k`, `cstar_ideal`, `MW` and `T0`.
+Gas properties are **not hardcoded**. They are pulled from
+`fvm.mechanism.HydrazineShell405` at a chosen ammonia dissociation fraction, so
+this tool and the bed model cannot drift apart:
 
-| Property | Value | Description |
-|---|---|---|
-| `k` | 1.26 | Specific heat ratio |
-| `cstar_ideal` | 2350 m/s | Ideal characteristic velocity |
-| `MW` | 11.8 g/mol | Combustion gas molecular weight |
-| `T0` | 3250 K | Adiabatic flame temperature |
-| `eta` | 0.95 | C\* efficiency |
+```python
+X_dissociation = 0.84                     # what fvm.thruster predicts for this bed
+_chamber = HydrazineShell405().chamber_conditions(X_dissociation)
+k, MW, T0, cstar_ideal = ...              # all follow
+```
+
+X is the single design variable — it sets T₀, molecular weight and γ together.
+Run `run_thruster.py` to recompute it for a different bed or flow rather than
+guessing. At X = 0.84:
+
+| Property | Value |
+|---|---|
+| `k` | 1.337 |
+| `cstar_ideal` | 1258 m/s |
+| `MW` | 11.49 g/mol |
+| `T0` | 995 K |
+| `eta` | 0.95 (empirical C\* efficiency) |
+
+The catalyst bed section uses `fvm.catbed`, and reproduces the original hand
+calculation exactly (a_v = 5423 1/m, 58.68 cm² for 60 PPI foam).
 
 ---
 
@@ -106,10 +129,10 @@ wrong and both are covered by tests:
 
 | | |
 |---|---|
-| Gas | Calorically perfect, frozen composition — matches `thruster_sizing.py` |
+| Gas | Calorically perfect, frozen composition — supplied by the bed model, or set directly |
 | Viscosity | Power law `μ = μ_ref (T/T_ref)^ω`, ω = 0.7 (Sutherland also available) |
-| Conductivity | From `Pr` (0.6, representative of H₂-rich products) |
-| Turbulence | **None, and none is needed.** Re_throat ≈ 1200 — the flow is laminar |
+| Conductivity | From `Pr` (0.6–0.7, representative of H₂-rich products) |
+| Turbulence | **None, and none is needed.** Re_throat is 1,000–6,000 — the flow is laminar |
 
 ### Numerics
 
@@ -203,6 +226,127 @@ python run_fvm_nozzle.py [options]
   --restart FILE.npz     resume from a checkpoint
   --no-plots
 ```
+
+---
+
+## Part 3 — Catalyst bed and system coupling
+
+The nozzle solver takes chamber conditions as given. This part produces them,
+from liquid hydrazine.
+
+### Module map
+
+| Module | Contents |
+|---|---|
+| `fvm/chem.py` | NASA-7 species thermodynamics, mixtures, `h(T)` inversion |
+| `fvm/mechanism.py` | Propellant-agnostic `Mechanism`; `HydrazineShell405` |
+| `fvm/catbed.py` | Bed geometry, packing, Ergun pressure drop, surface area |
+| `fvm/plugflow.py` | 1-D two-temperature reacting plug-flow reactor |
+| `fvm/thruster.py` | Couples bed to nozzle; solves the operating point |
+
+### The mechanism
+
+Three paths, each per mole of its limiting reactant:
+
+```
+N2H4 -> 4/3 NH3 + 1/3 N2      catalytic, diffusion-controlled
+N2H4 -> 4/3 NH3 + 1/3 N2      homogeneous, gas phase
+NH3  -> 1/2 N2  + 3/2 H2      catalytic, kinetically controlled,
+                              inhibited by hydrogen
+```
+
+The competition between the first and last is the whole design problem.
+Decomposition sets the temperature; dissociation eats some of it back while
+lowering molecular weight, so **c\* peaks at partial dissociation** — the model
+puts the optimum at X ≈ 0.28, and hydrazine engines are designed for 30–50%.
+
+Two structural choices:
+
+- **Heats of reaction are computed from species enthalpies, never tabulated.**
+  A hard-coded ΔH can silently disagree with the thermodynamic data beside it.
+- **Rates combine kinetics and mass transfer as resistances in series.** This
+  is physically right for a catalytic bed and it puts the answer where the data
+  is trustworthy: hydrazine decomposition over iridium is diffusion-limited, so
+  the Sherwood correlation controls rather than Arrhenius constants. A test
+  asserts it — raising the pre-exponential 1000× must not move the rate.
+
+### The reactor
+
+```
+G dY_i/dz = omega_i        species
+G dh/dz   = -q_loss        energy   (adiabatic => h constant)
+  dp/dz   = -(Ergun)       momentum
+```
+
+Gas and catalyst carry separate temperatures. Reactions see the solid; the gas
+is heated by convection from it. The solid temperature is not integrated but
+solved from a local balance at each station, and it is genuinely two-sided —
+the catalyst runs **750 K above the gas** where decomposition dominates and
+below it where dissociation does.
+
+Note the energy equation has no reaction source term: for an adiabatic bed the
+reaction enthalpy is already in the species enthalpies, so total enthalpy is
+conserved. That gives a strong check, and a test takes it — the integrated exit
+temperature matches the closed-form adiabatic value to 1e-6.
+
+**Vaporisation is not modelled.** Integration begins at the vapour-region
+inlet. That is a necessity, not a shortcut: conserving enthalpy through
+instantaneous vaporisation puts the vapour *below* the feed temperature,
+Arrhenius rates vanish and nothing ignites. Real beds resolve this by
+conducting heat upstream, which a steady 1-D model cannot represent.
+
+The inlet composition is not a free parameter either. The bed must decompose
+some of its own feed to vaporise the rest, and that extent follows from
+requiring `h(T_vapor, Y) = h_liquid(T_feed)`. It comes out at **34.2%
+decomposed at 455.6 K, against 38% in Kesten's own vapour region** — nothing
+in that calculation is fitted to his data.
+
+### Coupling
+
+Bed and nozzle need each other: chamber pressure is the bed exit, the choked
+throat sets mass flow from chamber pressure and c\*, and the bed's pressure
+drop depends on the resulting mass flux. Solved as a fixed point in both
+directions — feed pressure for a given flow, or flow for a given feed pressure.
+
+The loop uses the quasi-1-D nozzle because it needs many bed integrations. Run
+the CFD **once** afterwards on the converged chamber conditions, then feed its
+discharge coefficient back through `--cd`.
+
+### Provenance
+
+Rate parameters and correlations come from Kesten's UARL work under NASA
+contract NAS 7-458 (see `docs/README.md`). He is candid about what they are,
+and so is the code: the hydrazine activation energy was *"chosen rather
+arbitrarily"*, and the hydrogen inhibition order was measured on **platinum**
+and assumed to transfer to Shell 405 — *"this assumption remains untested"*.
+
+**Treat them as defaults to re-fit against your own bed data, not as physical
+constants.** In order of how much they move the answer:
+
+| Parameter | Uncertainty | Effect |
+|---|---|---|
+| `A_NH3` | factor of 3 (Kesten's own range) | sets dissociation |
+| `n_H2` | 1.0 vs 1.6, unresolved in his own Fortran | **factor of 24** in rate |
+| `T_vapor` | modelling input | sets pre-decomposition |
+| bed voidage | assumed | 20–35% systematic in Δp |
+
+### Validation
+
+Kesten's own program output (`docs/kesten_claude/vapor_reference.csv`) is a
+regression test:
+
+| | Kesten | Ours |
+|---|---|---|
+| Exit temperature | 1058.5 K | within 2% |
+| Dissociation X | 0.7341 | within 0.03 |
+| Adiabatic curve, X = 0 / X = 1 | ~1650 / ~880 K | 1646 / 868 K |
+| Dissociation fraction, all 6 stations | — | matches to 5 decimals |
+
+Sweeping the two uncertain parameters, the combination reproducing his output
+is `n_H2 = 1.0, A_NH3 = 1e11` — exactly `MAIN.f` plus his input deck, not
+`PARAM.f`'s 1.6. That is evidence about which of his two conflicting code
+paths ran, not proof that 1.0 is better physics: this model omits the
+intraparticle diffusion resistance his carries.
 
 ---
 
@@ -339,7 +483,23 @@ python validate_hayn.py --pc 5 --p-amb 1.0 --ni 200 --nj 100 \
 
 ---
 
-## Results for the baseline thruster
+## Results for the baseline thruster (LOX/LH2 — superseded)
+
+> ### ⚠ These numbers are for LOX/LH2, not the hydrazine thruster
+>
+> This run predates the catalyst bed model, and used the LOX/LH2 gas block that
+> was in `thruster_sizing.py` at the time — **T₀ = 3250 K, MW 11.8, γ 1.26**.
+> The actual thruster runs catalytic hydrazine at **T₀ ≈ 995 K, MW 11.5,
+> γ 1.34**, giving Re_throat ≈ 6,200 instead of 1,164.
+>
+> A 5.3× higher Reynolds number means a much thinner boundary layer, so the
+> 29% over-prediction below is **pessimistic** for the real thruster. It also
+> puts the case close to the [validated](#validation-against-measurement) range
+> rather than 7× below it.
+>
+> The numerics, verification and validation all stand. Only the operating point
+> is wrong. Re-running `run_fvm_nozzle.py` at the chamber conditions
+> `run_thruster.py` prints is the outstanding task.
 
 *(8.3 mm chamber, 0.29 mm throat, ε = 100, p₀ = 8.45 bar, T₀ = 3250 K,
 p_amb = 5 Torr, adiabatic wall, laminar. 220 × 80 grid, Roe + van Albada,
