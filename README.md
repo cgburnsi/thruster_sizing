@@ -18,9 +18,9 @@ The CFD solver exists because algebraic sizing cannot see the dominant loss
 mechanism at this scale. At a 0.29 mm throat the boundary layer occupies a
 large fraction of the passage and inviscid sizing over-predicts thrust. How
 badly depends strongly on the propellant, because that sets the Reynolds
-number: **Re ≈ 6,200** for catalytic hydrazine at the chamber conditions the
-bed model predicts, against 1,160 for the LOX/LH2 the solver was first
-exercised on. See [Results](#results-for-the-baseline-thruster).
+number. At **Re = 6,184** for catalytic hydrazine the over-prediction is 9%;
+the same solver gives 29% for LOX/LH2 at Re = 1,164. See
+[Results](#results-for-the-baseline-thruster).
 
 The solver is [verified](#verification) against analytic solutions and
 [validated](#validation-against-measurement) against measured micronozzle data
@@ -508,82 +508,73 @@ python validate_hayn.py --pc 5 --p-amb 1.0 --ni 200 --nj 100 \
 
 ---
 
-## Results for the baseline thruster (LOX/LH2 — superseded)
+## Results for the baseline thruster
 
-> ### ⚠ These numbers are for LOX/LH2, not the hydrazine thruster
->
-> This run predates the catalyst bed model, and used the LOX/LH2 gas block that
-> was in `thruster_sizing.py` at the time — **T₀ = 3250 K, MW 11.8, γ 1.26**.
-> The actual thruster runs catalytic hydrazine at **T₀ ≈ 995 K, MW 11.5,
-> γ 1.34**, giving Re_throat ≈ 6,200 instead of 1,164.
->
-> A 5.3× higher Reynolds number means a much thinner boundary layer, so the
-> 29% over-prediction below is **pessimistic** for the real thruster. It also
-> puts the case close to the [validated](#validation-against-measurement) range
-> rather than 7× below it.
->
-> The numerics, verification and validation all stand. Only the operating point
-> is wrong. Re-running `run_fvm_nozzle.py` at the chamber conditions
-> `run_thruster.py` prints is the outstanding task.
-
-*(8.3 mm chamber, 0.29 mm throat, ε = 100, p₀ = 8.45 bar, T₀ = 3250 K,
-p_amb = 5 Torr, adiabatic wall, laminar. 220 × 80 grid, Roe + van Albada,
-30 000 iterations, residual down 7.2 × 10⁻⁶.)*
+*Catalytic hydrazine, 8.3 mm chamber, 0.29 mm throat, ε = 100, p_amb = 5 Torr,
+adiabatic wall, laminar. Chamber conditions from `run_thruster.py`; nozzle from
+`run_fvm_nozzle.py` on a 220 × 80 grid, 30 000 iterations, residual down
+1.3 × 10⁻⁵.*
 
 | Quantity | CFD | Ideal 1-D | Ratio |
 |---|---|---|---|
-| Thrust | 77.55 mN | 100.41 mN | **0.772** |
-| Mass flow | 0.02265 g/s | 0.02434 g/s | **0.930** (C_d) |
-| Specific impulse | 349.2 s | 420.7 s | **0.830** |
-| Thrust coefficient | 1.389 | 1.799 | 0.772 |
+| Thrust | **87.42 mN** | 95.97 mN | **0.911** |
+| Mass flow | 0.04285 g/s | 0.04430 g/s | **0.967** (C_d) |
+| Specific impulse | **208.1 s** | 220.9 s | **0.942** |
+| Thrust coefficient | 1.568 | 1.722 | 0.911 |
 
-**The sizing tool over-predicts thrust by 29%.** That is the headline: at this
-scale the viscous loss is not a correction, it is a first-order effect, and no
-choice of C\* efficiency in the algebraic tool would have revealed it.
+**Inviscid sizing over-predicts thrust by 9%.** Real, but far less than the 29%
+the same solver gives for LOX/LH2 — because propellant sets Reynolds number:
 
-Why:
+| | Re_throat | Boundary layer at exit | Thrust ratio |
+|---|---|---|---|
+| LOX/LH2, T₀ 3250 K | 1,164 | 1.06 mm of 1.45 mm (73%) | 0.772 |
+| **Hydrazine, T₀ 994 K** | **6,184** | **0.60 mm of 1.45 mm (42%)** | **0.911** |
+
+Cooler gas is denser and less viscous, so the layer thins and most of the
+geometric area ratio does useful work. Exit Mach still runs 5.43 on the axis
+against 0.015 at the wall.
+
+The C\* ratio comes out **above** unity at 1.034. That is not an error: C\* uses
+the geometric throat area while the boundary layer shrinks the effective one,
+so it rises as 1/C_d. Check: 1/0.9672 = 1.0339, matching to four figures.
+
+### The loop closes
+
+Feeding C_d = 0.9672 back through `run_thruster.py --cd` raises chamber
+pressure from 8.440 to 8.726 bar — exactly the 1/C_d = 1.0339 the throat
+demands, with dissociation and bed temperature unmoved.
+
+### Design consequence
+
+The 0.0443 g/s point delivers **87.4 mN, not 100**. Thrust scales linearly with
+chamber pressure at fixed geometry, so:
+
+| | Current | For 100 mN |
+|---|---|---|
+| Mass flow | 0.0443 g/s | **0.0507 g/s** |
+| Feed pressure | 8.46 bar | **10.01 bar** |
+| Chamber pressure | 8.44 bar | 9.99 bar |
+| Real thrust | 87.4 mN | 100.8 mN |
+| Real Isp | 208.1 s | 202.9 s |
+
+Isp falls slightly because the higher chamber pressure shifts dissociation from
+X = 0.841 to 0.836.
+
+### Numerical quality
 
 | | |
 |---|---|
-| Throat Reynolds number | **1161** — laminar, thick boundary layer |
-| Exit Mach, on axis | 4.37 (vs 5.41 ideal) |
-| Exit Mach, first cell off wall | 0.02 |
-| Boundary layer at exit plane | **1.06 mm of a 1.45 mm exit radius** |
-| Sonic line at exit plane | 0.23 mm in from the wall |
-| Wall axial viscous force | −42.1 mN |
-| Adiabatic wall temperature | 3250 K (chamber) → 2554 K (exit) |
-
-The boundary layer occupies about 73% of the exit radius, so most of the
-nozzle's geometric area ratio is doing no useful expansion. This is the
-well-known micro-nozzle result, and it is the reason a 2-D viscous solve was
-worth building.
-
-**On the C\* ratio.** The report shows C\* *above* ideal (1.074). That is not an
-error: C\* is evaluated as `p₀·A_t/ṁ` with the **geometric** throat area, and the
-boundary layer reduces the effective throat area, so the apparent C\* rises by
-roughly `1/C_d`. The discharge coefficient is the physical quantity.
-
-### Numerical quality of that run
-
-| | |
-|---|---|
-| Mass error, inlet vs exit | 0.021% |
-| Mass spread, throat to exit | 0.021% |
-| Momentum balance residual | 0.020% of thrust — against a wall pressure force 588× the thrust |
-| Max wall y⁺ | 0.18 |
-| Grid sensitivity | 160 × 60 vs 220 × 80 agree on thrust to ~0.5% |
+| Mass spread, throat to exit | 0.0024% |
+| Mass error, inlet vs exit | 0.031% |
+| Momentum balance residual | 0.221% |
+| Max wall y⁺ | 0.61 |
 
 Mass flow and thrust are integrated from the solver's **own numerical face
 fluxes**, not from cell-centred states. For a conservative scheme at steady
-state, summing continuity down a column of cells makes the j-face terms
-telescope to (wall flux) − (axis flux), and both vanish identically — the wall
-passes no mass, and axis faces carry `S = 0`. Consecutive stations must
-therefore report exactly the same mass flow. Measuring from averaged cell
-states instead injects ~3% of spurious variation, enough to look like a real
-leak; it also left a 1.9% momentum-balance residual that was pure measurement
-error. Both drop to ~0.02% when the fluxes are integrated consistently.
-
-Figures and a full summary land in `out/` (`nozzle_visc_RESULTS.md` plus PNGs).
+state the j-face terms telescope to (wall flux) − (axis flux) and both vanish,
+so consecutive stations must report exactly the same mass flow. Measuring from
+averaged cell states instead injects ~3% of spurious variation and leaves a
+1.9% momentum-balance residual that is pure measurement error.
 
 ---
 
