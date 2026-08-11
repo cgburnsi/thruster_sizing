@@ -27,14 +27,21 @@ from .thermo import PerfectGas, LOX_LH2_OF5, COLD_N2, G0, R_UNIVERSAL
 from .geometry import NozzleContour, ConicalNozzle, BellNozzle
 from .grid import Grid
 from .bc import BoundaryConditions
+from .catbed import (CatalystBed, PackedSpheres, PackedCylinders,
+                     ReticulatedFoam, mesh_to_diameter)
+from .mechanism import HydrazineShell405, get_mechanism
 from .solver import NozzleSolver
-from . import quasi1d, post, riemann, reconstruct, viscous
+from . import quasi1d, post, riemann, reconstruct, viscous, chem, catbed, mechanism
 
 __all__ = [
     "PerfectGas", "LOX_LH2_OF5", "COLD_N2", "G0", "R_UNIVERSAL",
     "NozzleContour", "ConicalNozzle", "BellNozzle",
     "Grid", "BoundaryConditions", "NozzleSolver",
+    "CatalystBed", "PackedSpheres", "PackedCylinders",
+    "ReticulatedFoam", "mesh_to_diameter",
+    "HydrazineShell405", "get_mechanism",
     "quasi1d", "post", "riemann", "reconstruct", "viscous",
+    "chem", "catbed", "mechanism",
 ]
 
 __version__ = "0.1.0"
