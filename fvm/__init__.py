@@ -31,8 +31,9 @@ from .catbed import (CatalystBed, PackedSpheres, PackedCylinders,
                      ReticulatedFoam, mesh_to_diameter)
 from .mechanism import HydrazineShell405, get_mechanism
 from .plugflow import PlugFlowReactor, PlugFlowSolution
+from .thruster import ThrusterSystem, ThrusterSolution, vapor_region_inlet
 from .solver import NozzleSolver
-from . import quasi1d, post, riemann, reconstruct, viscous, chem, catbed, mechanism, plugflow
+from . import quasi1d, post, riemann, reconstruct, viscous, chem, catbed, mechanism, plugflow, thruster
 
 __all__ = [
     "PerfectGas", "LOX_LH2_OF5", "COLD_N2", "G0", "R_UNIVERSAL",
@@ -42,8 +43,9 @@ __all__ = [
     "ReticulatedFoam", "mesh_to_diameter",
     "HydrazineShell405", "get_mechanism",
     "PlugFlowReactor", "PlugFlowSolution",
+    "ThrusterSystem", "ThrusterSolution", "vapor_region_inlet",
     "quasi1d", "post", "riemann", "reconstruct", "viscous",
-    "chem", "catbed", "mechanism", "plugflow",
+    "chem", "catbed", "mechanism", "plugflow", "thruster",
 ]
 
 __version__ = "0.1.0"

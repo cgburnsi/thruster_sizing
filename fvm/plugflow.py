@@ -167,7 +167,7 @@ class PlugFlowReactor:
         Re_a = np.maximum(G / (medium.a_v * np.maximum(mu, 1e-12)), 1e-12)
         return 0.61 * G * cp * self.Pr ** -0.667 * Re_a ** -0.41
 
-    def solid_temperature(self, T_gas, p, Y, G, medium, span=2500.0):
+    def solid_temperature(self, T_gas, p, Y, G, medium, span=2500.0, tol=1e-3):
         """Solve ``Q_rxn(T_s) = h_c a_v (T_s - T_g)`` for the catalyst temperature.
 
         Bracketed rather than Newton-solved: the reaction term is a sum of
@@ -191,13 +191,13 @@ class PlugFlowReactor:
             # No sign change: the exchange term dominates everywhere, which
             # means the solid is essentially at the gas temperature.
             return T_gas if abs(f_lo) < abs(f_hi) else hi
-        for _ in range(80):
+        for _ in range(60):
             mid = 0.5 * (lo + hi)
             if residual(mid) * f_lo > 0.0:
                 lo = mid
             else:
                 hi = mid
-            if hi - lo < 1e-6:
+            if hi - lo < tol:
                 break
         return 0.5 * (lo + hi)
 
@@ -233,7 +233,8 @@ class PlugFlowReactor:
 
     # -- driver -----------------------------------------------------------
     def solve(self, G, p_inlet, T_inlet, Y_inlet=None, n_output=400,
-              rtol=1e-6, atol=1e-9, method="LSODA", max_step=np.inf):
+              rtol=1e-6, atol=1e-9, method="LSODA", max_step=np.inf,
+              profiles=True):
         """Integrate from the vapour-region inlet to the bed exit.
 
         ``T_inlet`` and ``Y_inlet`` describe the state where the vapour region
@@ -259,10 +260,14 @@ class PlugFlowReactor:
 
         T_gas = np.array([float(mech.mixture.temperature_from_h(
             h[k], Y[:, k], T_guess=900.0)) for k in range(len(sol.t))])
-        T_solid = np.empty_like(T_gas)
-        rates = np.empty((len(mech.reactions), len(sol.t)))
-        for k, zk in enumerate(sol.t):
-            medium = self.bed.medium_at(zk)
+        # Reconstructing the catalyst temperature costs a bracketed solve per
+        # station and dominates the run time when only the exit state is
+        # wanted, which is the case inside the system-level iteration.
+        T_solid = np.full_like(T_gas, np.nan)
+        rates = np.full((len(mech.reactions), len(sol.t)), np.nan)
+        stations = range(len(sol.t)) if profiles else (len(sol.t) - 1,)
+        for k in stations:
+            medium = self.bed.medium_at(sol.t[k])
             T_solid[k] = self.solid_temperature(T_gas[k], p[k], Y[:, k], G, medium)
             rates[:, k] = mech.rates(T_gas[k], T_solid[k], p[k], Y[:, k], G, medium)
 
