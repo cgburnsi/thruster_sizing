@@ -225,7 +225,32 @@ python run_fvm_nozzle.py [options]
   --wall-temp K          isothermal wall (default adiabatic)
   --restart FILE.npz     resume from a checkpoint
   --no-plots
+
+  --chamber P0_BAR T0_K MW GAMMA
+                         chamber conditions, as printed by run_thruster.py.
+                         Without it the built-in LOX/LH2 block is used, which
+                         is not what this thruster burns.
+  --pr --mu-ref --omega  transport properties for the --chamber gas
 ```
+
+### Closing the loop
+
+`run_thruster.py` prints a ready-to-paste command for the CFD run:
+
+```
+python run_fvm_nozzle.py --chamber 8.4400 994.2 11.492 1.3374     --ni 220 --nj 80 --wall-spacing 0.003 --l-chamber 4.0 --iters 30000
+```
+
+Take the discharge coefficient that run reports and hand it back:
+
+```
+python run_thruster.py --mdot 0.0443 --cd 0.93
+```
+
+which re-converges the bed and nozzle against the real throat. As a check, the
+quasi-1-D reference `run_fvm_nozzle.py` prints under `--chamber` reproduces the
+coupled system's own answer independently — 0.04430 g/s, 95.97 mN, Isp 220.9 s
+from both.
 
 ---
 

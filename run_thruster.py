@@ -119,6 +119,11 @@ def main():
     c = sol.chamber
     print(f"  p0 = {c['p'] / 1e5:.4f} bar   T0 = {c['T']:.1f} K   "
           f"MW = {c['MW']:.3f}   gamma = {c['gamma']:.4f}")
+    print("\n  copy-paste:")
+    print(f"    python run_fvm_nozzle.py --chamber {c['p'] / 1e5:.4f} "
+          f"{c['T']:.1f} {c['MW']:.3f} {c['gamma']:.4f} \\")
+    print(f"        --ni 220 --nj 80 --wall-spacing 0.003 --l-chamber 4.0 "
+          f"--iters 30000 --out out/nozzle_n2h4")
 
     os.makedirs(os.path.dirname(args.out) or '.', exist_ok=True)
     with open(args.out + '_report.txt', 'w', encoding='utf-8') as fh:

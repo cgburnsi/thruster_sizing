@@ -21,19 +21,36 @@ d_c      = mt.Quantity(8.3,   'mm')    # Chamber diameter
 d_t      = mt.Quantity(0.29,  'mm')    # Throat diameter
 expan    = 100.0                       # Area expansion ratio (A_e/A_t)
 L_c      = mt.Quantity(10.0,  'mm')    # Chamber length (constant-radius section)
-P_c      = mt.Quantity(8.45,  'bar')   # Chamber total pressure (from thruster_sizing.py)
+P_c      = mt.Quantity(8.45,  'bar')   # Chamber total pressure
 P_a      = mt.Quantity(5.0,   'Torr')  # Ambient pressure
 T_0      = mt.Quantity(3250., 'K')     # Chamber total temperature
 
 theta_conv = 35.0                      # Convergent cone half-angle [deg]
 theta_div  = 15.0                      # Divergent cone half-angle [deg]
 
-# Combustion gas properties (LOX/LH2, O/F = 5.0), frozen and calorically perfect
+# Default gas: LOX/LH2 at O/F = 5.0, frozen and calorically perfect. This is
+# NOT the catalytic hydrazine this hardware actually runs -- pass --chamber
+# with the values run_thruster.py prints to use the real operating point.
 GAS_KW = dict(LOX_LH2_OF5)
+
+#: Viscosity model used with --chamber, matching fvm.mechanism.viscosity so the
+#: bed and the nozzle describe the same gas. Override with --mu-ref / --omega.
+MU_REF_1000K = 3.5e-5
+MU_OMEGA = 0.7
 
 
 def build(args):
-    gas = PerfectGas(**GAS_KW)
+    if args.chamber is not None:
+        p0_bar, T0_K, MW, gamma = args.chamber
+        mu_ref = (args.mu_ref if args.mu_ref
+                  else MU_REF_1000K * (T0_K / 1000.0) ** MU_OMEGA)
+        gas = PerfectGas(gamma=gamma, MW=MW, Pr=args.pr, mu_ref=mu_ref,
+                         T_mu_ref=T0_K, mu_law='power', omega=args.omega)
+        p0, T0 = p0_bar * 1e5, T0_K
+    else:
+        gas = PerfectGas(**GAS_KW)
+        p0, T0 = P_c.to('Pa').value, T_0.to('K').value
+
     Lc = L_c.to('m').value if args.l_chamber is None else args.l_chamber * 1e-3
 
     if args.bell:
@@ -47,15 +64,26 @@ def build(args):
     grid = Grid.from_contour(contour, ni=args.ni, nj=args.nj,
                              wall_spacing=args.wall_spacing)
     wall = 'adiabatic' if args.wall_temp is None else args.wall_temp
-    bcs = BoundaryConditions(p0=P_c.to('Pa').value, T0=T_0.to('K').value,
-                             p_amb=P_a.to('Pa').value, wall=wall,
-                             inlet=args.inlet)
+    bcs = BoundaryConditions(p0=p0, T0=T0, p_amb=P_a.to('Pa').value,
+                             wall=wall, inlet=args.inlet)
     return gas, contour, grid, bcs
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--chamber', type=float, nargs=4, default=None,
+                    metavar=('P0_BAR', 'T0_K', 'MW', 'GAMMA'),
+                    help='chamber conditions, as printed by run_thruster.py. '
+                         'Without this the built-in LOX/LH2 block is used, '
+                         'which is not what this thruster burns.')
+    ap.add_argument('--pr', type=float, default=0.7,
+                    help='Prandtl number for the --chamber gas')
+    ap.add_argument('--mu-ref', type=float, default=None,
+                    help='reference viscosity [Pa s] at T0; default follows '
+                         'fvm.mechanism so bed and nozzle agree')
+    ap.add_argument('--omega', type=float, default=MU_OMEGA,
+                    help='viscosity power-law exponent')
     ap.add_argument('--ni', type=int, default=200, help='axial cells')
     ap.add_argument('--nj', type=int, default=80, help='radial cells')
     ap.add_argument('--wall-spacing', type=float, default=0.004,
@@ -93,8 +121,12 @@ def main():
     print(contour)
     print(grid.summary())
     print(f"\n{gas}")
-    print(f"p0 = {P_c.to('bar').value:.3f} bar    T0 = {T_0.to('K').value:.1f} K    "
+    print(f"p0 = {bcs.p0 / 1e5:.4f} bar    T0 = {bcs.T0:.1f} K    "
           f"p_amb = {P_a.to('Torr').value:.2f} Torr")
+    if args.chamber is None:
+        print("NOTE: using the built-in LOX/LH2 gas block, which is not what "
+              "this thruster burns.\n      Pass --chamber with the values "
+              "run_thruster.py prints for the real operating point.")
     print(f"contraction ratio = {contour.contraction_ratio:.1f}    "
           f"expansion ratio = {contour.area_ratio:.1f}")
 
