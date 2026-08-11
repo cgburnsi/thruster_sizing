@@ -14,6 +14,11 @@ this scale. At a 0.29 mm throat the throat Reynolds number is about **1200**:
 the boundary layer is a large fraction of the passage, and inviscid
 sizing over-predicts thrust substantially. See [Results](#results-for-the-baseline-thruster).
 
+The solver is [verified](#verification) against analytic solutions and
+[validated](#validation-against-measurement) against measured micronozzle data
+from NASA TM-77730, whose test hardware matches this thruster's geometry to
+within 2%.
+
 ---
 
 ## Quick start
@@ -24,12 +29,17 @@ pip install -r requirements.txt
 python thruster_sizing.py                 # algebraic sizing
 python run_fvm_nozzle.py                  # CFD, default 200 x 80 grid
 python run_fvm_nozzle.py --euler          # inviscid, for comparison
+python validate_hayn.py --pc 10           # validation vs NASA TM-77730
 pytest -m "not slow"                       # fast verification tests
 ```
 
 > `metronos` is installed directly from GitHub (see `requirements.txt`); it is
 > not on PyPI. It is used only for unit handling in the driver scripts — the
 > solver core is plain SI floats and NumPy.
+
+A production CFD run takes tens of minutes on one core. Both drivers checkpoint
+periodically and resume automatically, so an interrupted run costs at most
+`--checkpoint-every` iterations; `--fresh` forces a clean start.
 
 ---
 
@@ -198,6 +208,10 @@ python run_fvm_nozzle.py [options]
 
 ## Verification
 
+*Verification asks whether the equations are being solved correctly.
+[Validation](#validation-against-measurement) — a separate section below —
+asks whether they are the right equations.*
+
 `pytest` — 40 tests, layered so a failure points at a layer rather than at
 "the CFD is wrong". Whole-solver runs are marked `slow`; use
 `pytest -m "not slow"` for the fast set.
@@ -216,6 +230,112 @@ Also covered: flux consistency `F(W,W,n) = F_phys`, conservation symmetry
 `F(L,R,n) = −F(R,L,−n)`, full-upwind behaviour in supersonic flow, limiter
 TVD properties, Green–Gauss exactness on linear fields, grid volume against
 analytic integrals, and the slip/no-slip wall distinction.
+
+---
+
+## Validation against measurement
+
+`validate_hayn.py` runs the solver against Dieter Hayn's micronozzle
+experiments — *"Beiträge zur Leistungsermittlung von Mikrodüsen"*, TU Munich
+dissertation 1983, translated as **NASA TM-77730** (in `docs/`). Twelve
+cold-gas N₂ micronozzles, each machined down through five area-ratio steps and
+fired at five chamber pressures: 1200 individual tests.
+
+**His nozzle 2 at its ε = 100 step is this thruster to within ~2%:**
+
+| | Hayn #2 | This thruster |
+|---|---|---|
+| Throat radius | 0.142 mm | 0.145 mm |
+| Exit diameter | 2.84 mm | 2.90 mm |
+| Area ratio | 99.65 | 100.0 |
+| Divergence half-angle | 15.0° | 15° |
+
+Geometry comes from his Table 4 (p. 107), which gives throat radius, exit
+diameter, and an overall length from an unstated datum. Differencing length
+against diameter across all five ε steps recovers the 15.0° divergent angle and
+locates the throat 8.45 mm from that datum; subtracting the 5.0 mm chamber
+fixes the convergent half-angle at ~28°. The reconstruction reproduces the
+tabulated lengths at ε = 200 and ε = 10 to within 0.03 mm.
+
+### Results
+
+Cold N₂, T₀ = 293 K, p_amb = 1 Torr, 200 × 100 grid, 22 000 iterations:
+
+| | 2 bar | 10 bar |
+|---|---|---|
+| Re_throat | 8,513 | 42,568 |
+| **Discharge coefficient C_d** | **0.972** | **0.987** |
+| **Specific impulse** | **70.8 s** | **74.4 s** |
+| Isp / ideal | 0.958 | 0.975 |
+| Thrust / ideal | 0.932 | 0.963 |
+| Boundary layer at exit | 0.545 mm | 0.281 mm |
+| Max wall y⁺ | 0.38 | 0.67 |
+| Mass spread, throat→exit | 0.027% | 0.009% |
+| Momentum balance residual | 1.16% | 0.35% |
+
+Both fall inside Hayn's measured **63–75 s** band for cold-N₂ micronozzles at
+this scale (Fig. 73), and C_d is below unity in both — a viscous nozzle cannot
+pass more mass than ideal, so that is a floor the solver had to clear on its
+own.
+
+**The trend is the stronger evidence.** Dropping Reynolds number 5× makes every
+loss grow, in the right direction and by a plausible amount: C_d 0.987 → 0.972,
+Isp ratio 0.975 → 0.958, exit boundary layer 0.281 → 0.545 mm. Hitting one
+number inside a band is easy; reproducing the Reynolds scaling is the part that
+suggests the physics is being solved rather than fitted.
+
+### What this does and does not establish
+
+- **It does not validate the thruster prediction.** Cold N₂ runs Re = 8,500 to
+  43,000; the LOX/LH2 thruster runs **1,160** — 7× below the lowest point tested
+  here. Same geometry, different viscous regime. The trend extrapolates the
+  right way, but it is extrapolation.
+- **A laminar solver is nonetheless correct here.** Hayn addresses this directly
+  (p. 31): the favourable pressure gradient puts the Boldman acceleration
+  parameter several times above critical, relaminarising the boundary layer, so
+  his own boundary-layer model assumes a laminar profile too.
+- **The comparison band is soft.** 63–75 s is read off a 1983 scanned pen plot,
+  and that figure is labelled for a different nozzle/ε combination than the one
+  modelled. It brackets the right regime; it is not a point-to-point match.
+- **Neither run is fully converged.** Residual drop 1.4×10⁻⁴ and 1.7×10⁻⁴,
+  against 7×10⁻⁶ for the hot case, with ~1% inlet-to-exit mass error remaining.
+  The 10 bar residual oscillated mid-run before coming down. Treat the third
+  significant figure as unsettled.
+
+### Independent corroboration of the mechanism
+
+Hayn found all 12 nozzles at ε > 100 produced **more** thrust than his model
+predicted, because the model had assumed Summerfield separation (separation once
+wall pressure falls below 0.4 × ambient). His explanation (p. 117): *"due to the
+greater influence of boundary layer formation in the case of extremely small
+propulsion unit dimensions... the residual pressure near the wall is higher than
+in purely potential flow."*
+
+The solver reproduces exactly that on the hot thruster, without being told to:
+
+| | |
+|---|---|
+| Inviscid 1-D exit pressure | 419 Pa → p_e/p_a = 0.63 (**over**-expanded) |
+| CFD wall exit pressure | 831 Pa (2× the inviscid value) |
+| CFD area-averaged exit pressure | 1419 Pa → p_e/p_a = 2.13 (**under**-expanded) |
+| Wall pressure below 0.4·p_amb | never |
+| Reverse flow / separation | none; wall shear positive throughout |
+
+Boundary-layer blockage flips the nozzle from over-expanded to under-expanded —
+the same mechanism Hayn measured, arrived at independently.
+
+He also reports optimized bell contours giving **up to 2% higher Isp** than
+conical at this scale; `BellNozzle` is implemented if you want to test that.
+
+### Next step
+
+A `--pc 5` run fills in the middle of the Reynolds range and shows whether the
+trend is smooth rather than two points and a hopeful line:
+
+```
+python validate_hayn.py --pc 5 --p-amb 1.0 --ni 200 --nj 100 \
+    --wall-spacing 0.0011 --iters 30000
+```
 
 ---
 
@@ -308,3 +428,8 @@ Figures and a full summary land in `out/` (`nozzle_visc_RESULTS.md` plus PNGs).
 - **AUSM⁺-up is not recommended for this geometry.** It is unstable in the
   near-stagnant chamber for `M_inf` below ~0.2, and dissipates enough above
   that to cost ~2% in predicted mass flow relative to Roe.
+- **No measured data exists at the thruster's Reynolds number.** The
+  [validation](#validation-against-measurement) covers Re = 8,500–43,000 in cold
+  N₂; the LOX/LH2 thruster runs at Re ≈ 1,160. Nothing here confirms the
+  solver at that condition — the 77.6 mN prediction rests on verified numerics
+  and a correctly-signed Reynolds trend, not on measurement.
