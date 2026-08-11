@@ -1,0 +1,15 @@
+
+
+Z:7.73770e-04 [ft], TEMP:820.00 [degR], H:259.63 [BTU/lb], WFV:   9.3472E-02
+Z:7.73893e-04 [ft], TEMP:820.00 [degR], H:306.63 [BTU/lb], WFV:   1.8694E-01
+Z:7.74016e-04 [ft], TEMP:820.00 [degR], H:353.63 [BTU/lb], WFV:   2.8041E-01
+Z:7.74138e-04 [ft], TEMP:820.00 [degR], H:400.64 [BTU/lb], WFV:   3.7389E-01
+Z:7.74261e-04 [ft], TEMP:820.00 [degR], H:447.64 [BTU/lb], WFV:   4.6736E-01
+Z:7.74384e-04 [ft], TEMP:820.00 [degR], H:494.64 [BTU/lb], WFV:   5.6083E-01
+Z:7.74506e-04 [ft], TEMP:820.00 [degR], H:541.64 [BTU/lb], WFV:   6.5430E-01
+Z:7.74629e-04 [ft], TEMP:820.00 [degR], H:588.65 [BTU/lb], WFV:   7.4777E-01
+Z:7.74751e-04 [ft], TEMP:820.00 [degR], H:635.65 [BTU/lb], WFV:   8.4124E-01
+Z:7.74874e-04 [ft], TEMP:820.00 [degR], H:682.65 [BTU/lb], WFV:   9.3472E-01
+Z:7.75082e-04 [ft], TEMP:820.00 [degR], H:715.48 [BTU/lb], WFV:   1.0000E+00
+
+

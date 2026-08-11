@@ -1,0 +1,93 @@
+description: |
+  Kesten (1968) Hydrazine Reactor Model
+  Defines liquid N2H4 and the primary gas species.
+
+# --- 1. Define the Phases ---
+phases:
+  - name: liquid_hydrazine
+    thermo: ideal-solution  # <-- This is the correct phase model
+    elements: [N, H]
+    species: [N2H4(L)]
+
+  - name: gas
+    thermo: ideal-gas
+    elements: [N, H]
+    species: [N2H4, NH3, N2, H2]
+
+# --- 2. Define Species ---
+species:
+  # --- Liquid Species ---
+  - name: N2H4(L)
+    composition: {N: 2, H: 4}
+    thermo:
+      model: constant-cp  # <-- This is the correct species thermo model
+      t0: 298.15
+      h0: 5.023e7    # J/kmol
+      s0: 121.3     # J/kmol-K
+      cp0: 54650.0    # J/kmol-K
+    density:
+      model: constant-density # <-- This is the correct species density model
+      value: 1004.0 # kg/m^3
+
+  # --- Gas Species ---
+  #
+  # !!! IMPORTANT !!!
+  # The NASA9 data below is placeholder data for H2O.
+  # You MUST replace this data with the correct coefficients
+  # from your 'nasa9.dat' file for N2H4, NH3, N2, and H2.
+  #
+  - name: N2H4
+    composition: {N: 2, H: 4}
+    thermo:
+      model: NASA9
+      temperature-ranges: [200.0, 1000.0, 6000.0]
+      data:
+      - [ 3.033795230E+00, 1.487258310E-02, -5.333880320E-06,
+          8.722601320E-10, -5.208271180E-14, -3.004865180E+04,
+          5.628331580E+00]
+      - [ 3.207878800E+00, 2.333851500E-03, -8.322004900E-07,
+          1.554236080E-10, -1.060721240E-14, -3.020811810E+04,
+          4.939223310E+00]
+    transport: {model: none}
+
+  - name: NH3
+    composition: {N: 1, H: 3}
+    thermo:
+      model: NASA9
+      temperature-ranges: [200.0, 1000.0, 6000.0]
+      data:
+      - [ 3.033795230E+00, 1.487258310E-02, -5.333880320E-06,
+          8.722601320E-10, -5.208271180E-14, -3.004865180E+04,
+          5.628331580E+00]
+      - [ 3.207878800E+00, 2.333851500E-03, -8.322004900E-07,
+          1.554236080E-10, -1.060721240E-14, -3.020811810E+04,
+          4.939223310E+00]
+    transport: {model: none}
+
+  - name: N2
+    composition: {N: 2}
+    thermo:
+      model: NASA9
+      temperature-ranges: [200.0, 1000.0, 6000.0]
+      data:
+      - [ 3.033795230E+00, 1.487258310E-02, -5.333880320E-06,
+          8.722601320E-10, -5.208271180E-14, -3.004865180E+04,
+          5.628331580E+00]
+      - [ 3.207878800E+00, 2.333851500E-03, -8.322004900E-07,
+          1.554236080E-10, -1.060721240E-14, -3.020811810E+04,
+          4.939223310E+00]
+    transport: {model: none}
+
+  - name: H2
+    composition: {H: 2}
+    thermo:
+      model: NASA9
+      temperature-ranges: [200.0, 1000.0, 6000.0]
+      data:
+      - [ 3.033795230E+00, 1.487258310E-02, -5.333880320E-06,
+          8.722601320E-10, -5.208271180E-14, -3.004865180E+04,
+          5.628331580E+00]
+      - [ 3.207878800E+00, 2.333851500E-03, -8.322004900E-07,
+          1.554236080E-10, -1.060721240E-14, -3.020811810E+04,
+          4.939223310E+00]
+    transport: {model: none}

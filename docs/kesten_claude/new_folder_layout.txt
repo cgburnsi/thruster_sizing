@@ -1,0 +1,38 @@
+thruster_bed/
+  core/
+    mesh/               # 1D grids now, 2D later (connectivity, faces, patches)
+    fields/             # cell/face fields, ghosting, BC application
+    fv/                 # finite-volume operators, interpolation, limiters
+    numerics/           # nonlinear solve, linear solve, time integrators
+    io/                 # case files, restart, output writers
+    units/              # optional (you already have Quantity ideas)
+
+  physics/
+    phases/             # GasPhase, LiquidPhase, SolidPhase, Mixture, EOS
+    porous/             # Darcy/Forchheimer, permeability, tortuosity, porosity
+    transport/          # viscosity, k, diffusion, mass/heat transfer closures
+    interphase/         # evaporation/condensation, drag, interfacial area
+    heat/               # solid energy, wall losses, radiation if needed
+
+  chemistry/
+    thermo/             # NASA polynomials, h(T), cp(T), equilibrium helpers
+    mechanisms/         # reaction mechanism definitions (gas + surface)
+    kinetics/           # rate laws, Arrhenius, falloff, coverage effects
+    surface/            # site balance, coverages, adsorption/desorption
+    jacobian/           # analytic/auto Jacobian blocks for stiff solve
+
+  models/
+    equations/          # species, energy, momentum, phase continuity
+    thruster_bed/       # “assembled model”: chooses equations + closures
+    bc/                 # inlet/outlet/wall BCs and source terms
+
+  cases/
+    ...                 # example runs + regression baselines
+
+  post/
+    ...                 # derived quantities, plots, validation comparisons
+
+  tests/
+    unit/
+    mms/                # method-of-manufactured-solutions for FV operators
+    regression/         # compare against saved baselines for known cases

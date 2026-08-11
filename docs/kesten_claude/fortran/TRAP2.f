@@ -1,0 +1,34 @@
+	SUBROUTINE TRAPP (U,V,NPART,RIESUM)								   0
+C	NUMERICAL INTEGRATION USING TRAPEZOIDAL METHOD					  
+	REAL K0,KC3														  10
+	COMMON /BBBB/DP3,A,KC3,K0,XOA,CPS,CI3,GAMMA,BETA				  20
+C	DEFINE RHET FOR VARIABLE CP,CPS,TP 
+	RHETF(A,B,C,D,E,N) = E*A**(1-N)*B**N*EXP(C*D*(1.-B/A)/(1.D*(1.-   30
+   X                     B/A))) 									  40
+C	FUNCTIONS DEFINING INTEGANDS 
+	FOXI1(X,R)=X**2*R 												  50
+C	FUNCTION DEFINING CP(X) FOR RHET FUNCTION
+C	CP(X) IS ASSUMED TO VARY LINEARLY WITH X
+	CPXF(X,Y,Z)=(X-Y)/(1.-Y)*Z										  60
+	N=NPART-1														  70
+	PART=NPART 														  80
+	H=(V-U)/PART 													  90
+	UHP=U+H 														 100
+	SUM=0. 															 110
+	CPX1=CPXF(U,XOA,CPS)											 120
+	CPX2=CPXF(V,XOA,CPS)											 130
+	RHET1=RHETF(CI3,CPX1,GAMMA,BETA,K0,1)							 140
+	RHET2=RHETF(CI3,CPX2,GAMMA,BETA,K0,1)							 150
+C	CALCULATE FIRST,LAST TERMS OF RIEMANN SUM FIRST
+  4 TRM1=FOXI1(U,RHET1)/2.											 160
+	TRM2=FOXI1(V,RHET1)/2.											 170
+  6 DO 8 I=1,N 														 180
+	CPX=CPXF(UPH,XOA,CPS) 											 190
+	RHET=RHETF(CI3,CPX,GAMMA,BETA,K0,1) 							 200
+	SUM=SUM+FOXI1(UPH,RHET)											 210
+	UPH=UPH+H 														 220
+  8 CONTINUE 														 230
+  9 RIESUM=H*(TRM1+SUM+TRM2) 										 240
+ 99 RETURN 														     250
+	END																 260
+

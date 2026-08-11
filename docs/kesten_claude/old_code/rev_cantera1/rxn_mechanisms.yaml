@@ -1,0 +1,99 @@
+# ---------- Reactor Mechanisms ---------------------------------------------------------------------------------------
+
+units: {length: cm, time: s, quantity: mol, activation-energy: cal/mol}
+
+# ---------- Phase Information ----------------------------------------------------------------------------------------
+phases:
+- name: gas
+  thermo: ideal-gas
+  elements: [H, O, He]
+  species: [H, H2, He, H2O, OH]
+  kinetics: gas
+  reactions: all
+  transport: mixture-averaged
+  state: {T: 1000 K, P: 1 atm}
+
+# ---------- Species Information --------------------------------------------------------------------------------------
+species:
+- name: H
+  composition: {H: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 3500.0]
+    data:
+    - [2.5,         7.05332819e-13, -1.99591964e-15,  2.30081632e-18, -9.27732332e-22, 25473.6599, -0.446682853]
+    - [2.50000001, -2.30842973e-11,  1.61561948e-14, -4.73515235e-18,  4.98197357e-22, 25473.6599, -0.446682914]
+  transport:
+    model: gas
+    geometry: atom
+    well-depth: 145.0     # (K)
+    diameter: 2.05       # (Angstroms)
+
+- name: H2
+  composition: {H: 2}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 3500.0]
+    data:
+    - [2.34433112, 0.00798052075, -1.9478151e-05,   2.01572094e-08, -7.37611761e-12, -917.935173,  0.683010238]
+    - [3.3372792, -4.94024731e-05, 4.99456778e-07, -1.79566394e-10,  2.00255376e-14, -950.158922, -3.20502331]
+  transport:
+    model: gas
+    geometry: linear
+    well-depth: 38.0      # (K)
+    diameter: 2.92       # (Angstroms)
+    polarizability: 0.79
+    rotational-relaxation: 280.0
+
+- name: He
+  composition: {He: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 3500.0]
+    data:
+    - [2.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  transport:
+    model: gas
+    geometry: atom
+    well-depth: 10.2      # (K)
+    diameter: 2.58       # (Angstroms)
+
+- name: H2O
+  composition: {H: 2, O: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 3500.0]
+    data:
+    - [4.19864056, -0.0020364341,   6.52040211e-06, -5.48797062e-09, 1.77197817e-12, -30293.7267, -0.849032208]
+    - [3.03399249,  0.00217691804, -1.64072518e-07, -9.7041987e-11,  1.68200992e-14, -30004.2971,  4.9667701]
+  transport:
+    model: gas
+    geometry: nonlinear
+    well-depth: 572.4     # (K)
+    diameter: 2.605      # (Angstroms)
+    dipole: 1.844         # (Debye)
+    rotational-relaxation: 4.0
+
+- name: OH
+  composition: {O: 1, H: 1}
+  thermo:
+    model: NASA7
+    temperature-ranges: [200.0, 1000.0, 3500.0]
+    data:
+    - [3.99201543, -0.00240131752,  4.61793841e-06, -3.88113333e-09, 1.3641147e-12,  3615.08056, -0.103925458]
+    - [3.09288767,  0.000548429716, 1.26505228e-07, -8.79461556e-11, 1.17412376e-14, 3858.657,    4.4766961]
+  transport:
+    model: gas
+    geometry: linear
+    well-depth: 80.0      # (K)
+    diameter: 2.75       # (Angstroms)
+
+# ---------- Reaction Mechanisms --------------------------------------------------------------------------------------
+reactions:
+- equation: H2 + OH <=> H + H2O
+  rate-constant: {A: 1.17e+09, b: 1.3, Ea: 3626.0}   # Arrhenius rate expression: k = A * T^b * exp(-Ea / RT)
+
+
+
+
+

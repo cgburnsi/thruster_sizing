@@ -1,0 +1,50 @@
+{
+  "phases": [
+    {
+      "name": "vapor_phase",
+      "species": ["H2", "N2", "NH3", "N2H4"],
+      "reactions": ["R1", "R2"]
+    }
+  ],
+  "species": [
+    {
+      "name": "H2",
+      "molecular_weight": 2.016,
+      "thermo": { "type": "tabulated", "cp_table": "CFTBL1" }
+    },
+    {
+      "name": "N2",
+      "molecular_weight": 28.016,
+      "thermo": { "type": "tabulated", "cp_table": "CFTBL2" }
+    },
+    {
+      "name": "NH3",
+      "molecular_weight": 17.032,
+      "transport": { "diffusivity": 0.17e-3 },
+      "thermo": { "type": "tabulated", "cp_table": "CFTBL3", "h_reaction_table": "H3TBL" }
+    },
+    {
+      "name": "N2H4",
+      "molecular_weight": 32.048,
+      "transport": { "diffusivity": 0.95e-4 },
+      "thermo": { "type": "tabulated", "cp_table": "CFTBL4", "h_reaction_table": "H4TBL" }
+    }
+  ],
+  "reactions": [
+    {
+      "id": "R1",
+      "equation": "3 N2H4 -> 4 NH3 + N2",
+      "reactants": {"N2H4": 3.0},
+      "products": {"NH3": 4.0, "N2": 1.0},
+      "kinetics": { "A": 1.0e10, "b": 0.0, "Ea_R": 2500.0 }
+    },
+    {
+      "id": "R2",
+      "equation": "2 NH3 -> N2 + 3 H2",
+      "reactants": {"NH3": 2.0},
+      "products": {"N2": 1.0, "H2": 3.0},
+      "kinetics": { "A": 1.0e11, "b": 0.0, "Ea_R": 50000.0 },
+      "orders": { "NH3": 1.0, "H2": -1.6 }
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+	"$schema":         "http://json-schema.org/draft-07/schema#",
+	"title":           "CEA NASA7 Species Record",
+	"type":            "object",
+	"required":        ["schema_version", "species", "mw"],
+	"properties":
+	{
+		"schema_version":     {"type": "string",	"pattern": "^cea-nasa7\\/v1$"},
+		"species":            {"type": "string", "minLength": 1},
+        "aliases":            {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+    },
+    "mw":               {"type": "number"},
+    "hf298":            {"type": "number"},
+    "thermo_ranges":
+    {
+        "type": "array",
+        "minItems":           1,
+        "items":
+        {
+            "type": "object", "required": ["t_low", "t_high", "nasa7"],
+            "properties":
+            {
+                "t_low":      {"type": "number"},
+                "t_high":     {"type": "number"},
+                "nasa7":      {"type": "array", "minItems": 10, "maxItems": 10, "items": {"type": "number"}}
+            },
+            "additionalProperties":   false
+        }
+    },
+    "transport_properties":
+    {
+        "type": "object",
+        "properties":
+        {
+            "lennard_jones":
+            {
+                "type": "object",
+                "properties":
+                {
+                    "sigma":    {"type": "number"}, "epsilon_over_k": {"type": "number"}
+                },
+            "required": ["sigma", "epsilon_over_k"],
+            "additionalProperties": false
+        },
+        "viscosity":
+        {
+            "type": "object",
+            "properties":
+            {
+                "model": { "type": "string", "enum": ["sutherland", "chung"] },
+                "mu_ref_Pa_s": { "type": "number" },
+                "T_ref_K": { "type": "number" },
+                "S_K": { "type": "number" },
+                "omega": { "type": "number" },
+                "mu_r": { "type": "number" },
+                "kappa": { "type": "number" }
+            },
+            "required": ["model"],
+            "additionalProperties": true
+        },
+        "thermal_conductivity":
+        {
+            "type": "object",
+            "properties":
+            {
+                "model": {"type": "string",
+                "enum": ["eucken", "poly_T"]},
+                "eucken_factor": { "type": "number" },
+                "coeffs": { "type": "array", "items": { "type": "number"}
+            }
+        },
+        "required": ["model"],
+        "additionalProperties": true
+        }
+    },
+    "additionalProperties": false
+    }
+}

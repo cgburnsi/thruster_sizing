@@ -1,0 +1,16 @@
+{
+	"$schema": 			"http://json-schema.org/draft-07/schema#",
+	"title": 			"CEA NASA7 Species Record",
+	"type":				"object",
+	"required": 		["schema_version", "species", "mw__g_per_mol"],
+	"properties":		{
+		"schema_version": 	{"type": "string",
+							 "pattern": "^cea-nasa7\\/v1$"
+							},
+		"species": 			{"type": "string", "minLength": 1},
+		"aliases": 			{"type": "array", "items": {"type": "string", "minLength": 1 },
+		"uniqueItems": 		true
+	},
+
+
+}

@@ -1,0 +1,6 @@
+
+Z:0.000e+00 [ft], TEMP:530.00 [degR], H:0.00 [BTU/lb], DHDZ:.377541e+05 [ft]
+Z:.251216e-03 [ft], TEMP:542.94 [degR], H:9.48 [BTU/lb], DHDZ:.538926e+05 [ft]
+Z:.427074e-03 [ft], TEMP:555.86 [degR], H:18.96 [BTU/lb], DHDZ:.945157e+05 [ft]
+Z:.527298e-03 [ft], TEMP:568.78 [degR], H:28.43 [BTU/lb], DHDZ:.143787e+06 [ft]
+Z:.593145e-03 [ft], TEMP:581.69 [degR], H:37.90 [BTU/lb], DHDZ:.221126e+06 [ft]

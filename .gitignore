@@ -68,3 +68,13 @@ out/
 scratch/
 *.log
 *.err
+
+# Reference documents (docs/): large scans and thermodynamic databases are
+# kept locally but not committed. See docs/README.md for what they are and
+# where to get them. The Fortran, the Python conversion and the small
+# reference data files ARE tracked.
+docs/**/*.pdf
+docs/kesten_claude/docs/Reactor_Textbook
+docs/**/THERMO.INP
+docs/**/thermo.txt
+docs/**/nasa9.dat

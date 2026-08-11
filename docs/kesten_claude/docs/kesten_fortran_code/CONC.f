@@ -1,0 +1,46 @@
+	SUBROUTINE CONC (C1,C2,C3,C4,ZC,H,T)								       0  (I think this is ZC and not Z0)
+C	THIS ROUTINE CALCULATES INITIAL N2H4,NH3,N2,H3 CONCENTRATIONS FOR
+C	VAPOR REGION OF THE REACTOR BED
+	INTEGER PRINT														  	  10
+	COMMON /FTZ/TBLVP(70),TBLH4(42),TBLH3(42),SHTBL1(34),SHTBL2(34), 	  	  20
+   1        SHTBL3(34),SHTBL4(34),ZTBLD(46),ZTBLAP(46),ZTBLA(46) 		  	  30
+	COMMON /CO/HL,HV,FC,TF,CFL,CGM,ENMX1,AGM,DIF3,DIF4,KP,PRES,G0,		  	  40
+   1        WM4,WM3,WM2,WM1,ALPHA3,R,TVAP,ZEND,BGM,HF,DZ,ALPHA1,ALPHA2		  50
+   2        ,ENMX2,ENMX3,EN1,EN2,EN3,H,RAT,MI 							      60
+	COMMON /VAR/DERIV(250),DHDZ(250),Z(250)								      70
+	COMMON /TOLL/ALIM,OPTION,C1,C2,C3,C4,CAV,G,TEMP,AP,WMAV,Z0,			  	  80
+	COMMON /MUVST/VISVST(30)											  	  90
+	COMMON /FLAGS/MFLAG,KFLAG,PRINT 									     100
+	CALL UNBAR (TBLH4(1),1,T,0.,H4,KK) 										 110
+	XV=-(H-HF)/H4															 120
+	C4=((PRES*WM4)/(R*TVAP))*((1.-XV)/(1.+XV))								 130
+	C3=((PRES*WM3)/(R*TVAP))*(XV/(1.+XV))   								 140
+	C2=((PRES*WM2)/(2.*R*TVAP))*(XV/(1.+XV))								 150
+	C1=((PRES*WM1)/(2.*R*TVAP))*(XV/(1.+XV))								 160
+    RETURN 																	 170
+	END																		 180
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

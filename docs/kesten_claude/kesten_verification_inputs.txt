@@ -1,0 +1,35 @@
+# Card 4
+Z0     = 0.0          # axial distance to end of buried injector [ft]
+G0     = 3.0         # inlet mass flow rate [lb/ft2-sec]
+FC     = 0.0          # distributed feed rate [lb/ft3-sec]
+ALPHA3 = 2.14e10      # thermal decomp pre-exponential [1/sec]
+HF     = 0.0          # enthalpy of feed liquid [Btu/lb]
+R      = 10.73        # gas constant [psia-ft3 / lb-mole-deg-R]
+WM4    = 32.048       # mol wt N2H4
+WM3    = 17.032       # mol wt NH3
+
+# Card 5
+WM2    = 28.016       # mol wt N2
+WM1    = 2.016        # mol wt H2
+ALPHA1 = 1.0e10       # catalytic N2H4 decomp pre-exponential [1/sec]  (EN1=1)
+ALPHA2 = 1.0e11       # catalytic NH3 decomp pre-exponential [(lb/ft3)^0.5/sec]
+AGM    = 2500.0       # activation energy N2H4 catalytic / R [deg R]
+BGM    = 50000.0      # activation energy NH3 catalytic / R [deg R]
+KP     = 0.4e-4       # thermal conductivity of porous particle [Btu/ft-sec-deg R]
+CGM    = 33000.0      # activation energy N2H4 thermal / R [deg R]
+
+# Card 6
+TF     = 530.0        # feed temperature [deg R]
+CFL    = 0.7332       # specific heat liquid N2H4 [Btu/lb-deg R]
+ENMX1  = 200.0        # step-size control, liquid region
+ENMX2  = 40.0         # step-size control, liquid-vapor region
+ENMX3  = 80.0         # step-size control, vapor region
+DIF3   = 0.17e-3      # diffusion coeff NH3 at STP [ft2/sec]
+DIF4   = 0.95e-4      # diffusion coeff N2H4 at STP [ft2/sec]
+PRES   = 100.0        # inlet chamber pressure [psia]
+
+# Card 7
+ZEND   = 0.25         # bed length [ft]
+EN1    = 1.0          # order of N2H4 catalytic rxn w.r.t. N2H4
+EN2    = 1.0          # order of NH3 catalytic rxn w.r.t. NH3
+EN3    = -1.6         # order of NH3 catalytic rxn w.r.t. H2

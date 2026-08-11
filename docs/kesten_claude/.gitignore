@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.eggs/
+dist/
+build/
+*.so
+
+# Spyder
+.spyproject/
+
+# Logs / scratch
+*.log
+_vapor_debug.csv
+simulation.log
+
+# Generated plots (keep paper screenshots, ignore generated ones)
+Figure 2025-12-25*.png
+pressure_temp_plot.png
+src/comparison_*.png
+
+# Claude session data
+.claude/
+
+# PDF files (Kesten paper, NASA reports — keep locally, don't publish)
+**/*.pdf
+
+# Internal test documents (safety assessments, test procedures, PIDs)
+docs/Test Documents/
+
+# Large binary / spreadsheet scratch files
+concentrations.ods
+**/*.docx
+**/*.xls
+**/*.xlsx
+
+# LaTeX build artifacts
+**/*.aux
+**/*.out
+**/*.toc
+**/*.synctex.gz
+
+# LaTeX source files (generated reports)
+docs/*.tex
+docs/report/
+docs/kesten_doc_conversion/
+docs/mixture_class_implementation.*
+docs/Enthalpy_Discrepancy_Memo.*
+docs/Comparison_Analysis*
+docs/LiquidPhaseDescription.*
+vapor_section.tex

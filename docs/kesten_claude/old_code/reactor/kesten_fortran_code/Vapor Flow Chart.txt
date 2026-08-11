@@ -1,0 +1,43 @@
+1. Subroutine VAPOR
+2. Initialize parameters for vapor region
+3. Call UNBAR to get fluid properties
+4. Call SGRAD to compute initial temperature/concentration gradient
+5. Check if TEMP vs Z profile has reached initial peak
+    a. If YES:
+        i. Fix DZ increments from current Z to end of bed (15 increments)
+        ii. Proceed to step 6
+    b. If NO:
+        i. Calculate new DZ increment
+        ii. Go to step 6
+6. Compute:
+    - DW1DZ through DW4DZ (mass fraction gradients)
+    - DC1DZ through DC4DZ (concentration gradients)
+    - DPDZ (pressure gradient)
+    - DRDZR (density ratio gradient)
+7. Re-check if TEMP vs Z profile has reached initial peak
+    a. If NO: go to step 12
+    b. If YES: continue
+8. Initial Feed Rate != 0?
+	a. If NO: go to step 12
+	b. IF YES: go to step 9
+9. DZ Increment too large?
+	a. if NO: go to step 12
+	b. IF YES: go to step 10
+10: Call REDIVD
+11: Print Message on DZ Increment Redivision: Go to step 12
+12: DO program calculations for temp, pressure, H, C1, C2, C3, C4, and Mole Fractions for C1, C2, C3, C4
+13: FRAC3D Too Large?
+	a. If NO: goto 14
+	b. If Yes: Calculate a new DZ (DZ=DZ/2) and go to step 12
+14: Increment Axially by Amount DZ
+15: Test and/or Reset JFLAG,NINT Parameters
+16: Print out Z, Temp, Pressure, H, C1, C2, C3, C4 and Mole Fractions of C1, C2, C3, C4
+17: End of Reactor Reached
+	a: if NO: go to step 2
+	b: if YES: go to step 18
+18: Initial Feed Rate Non-Zero?
+	a: if yes: goto step 19
+	b: if no: goto step 20
+19: Insert 6 Additional Z Values at End of Reactor Bed and go to step 20
+20: Print out All Axial Station Z values from vapor region
+21: Return

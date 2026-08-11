@@ -1,0 +1,32 @@
+{
+    "key": "N2H4(L)",
+    "name": "Hydrazine",
+    "aliases": ["Diazane", "Diamine", "Tetrahydridodinitrogen(N-N)", "Diamidogen"],
+    "formula": "N2H4",
+    "phase": "l",
+    "mw": 32.0451600,
+    "hf298": 50380.000,
+    "hf298_h0": 0.0,
+    "elements": {"N": 2, "H": 4},
+    "comment": "Hydrazine.Hf:Gurvich,1989 pt1 p360. Chase,1998(12/65). React",
+    "thermo": [
+        {"T_low": 100.0, "T_high": 800.0,
+         "a": [2.080965738e+04, -7.418167630e+02, 1.916569184e+01, -4.539330120e-02, 1.342024252e-04, -1.470873931e-07, 6.056288260e-11],
+         "b": [5.735408180e+03, -8.820213940e+01]
+         }
+    ]
+}
+
+
+
+
+
+ 
+
+
+
+
+ 
+
+
+ 

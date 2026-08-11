@@ -1,0 +1,91 @@
+
+''' Parameter List
+
+    State Properties
+    
+    'A': Speed of Sound
+    'C': Mass Specific Constant Pressure Specific Heat
+    'D': Density
+    'H': Mass Specific Enthalpy
+    'K': Thermal Conductivity
+    'M': Molar Mass
+    'O': Mass Specific Constant Volume Specific Heat
+    'P': Pressure
+    'R': Gas Constant
+    'S': Mass Specific Entropy
+    'T': Temperature
+    'V': Viscosity (dynamic viscosity)
+    'Z': Compressibility Factor
+
+    Reaction Properties
+    'X': Heat of Reaction
+
+
+'''
+
+
+
+_FLUIDS = {'N2': {'M': 28.0134,         # [g/mol] Molecular Mass
+                  }}
+        
+# Property Aliases Available
+_PROP_ALIAS = {'D': 'DENSITY',   'DEN': 'DENSITY',      'DENSITY': 'DENSITY',
+               'V': 'VISCOSITY', 'VISC': 'VISCOSITY',   'VISCOSITY': 'VISCOSITY',
+               }
+
+
+
+def prop(output, input1, value1, input2, value2, fluid_or_mixture):
+    
+    match output.upper():
+        
+        case 'D' | 'DEN' | 'DENSITY':
+            print('Density Calculation')
+        
+        case 'V' | 'VISC' | 'VISCOSITY':
+            print('Viscosity Calculation')
+            
+
+
+
+    {
+        "t_low":     200.0,
+        "t_high":   1000.0,
+        "nasa7":    [22103.7122, -381.846145, 6.08273815, -0.00853091381, 0.000013846461, -9.62579293e-09, 2.5197056e-12, 0.0, 710.845911, -10.760032]
+    },
+
+
+
+
+
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CEA NASA7 species record",
+  "type": "object",
+  "required": ["schema_version", "species", "mw_g_per_mol", "ranges"],
+  "properties": {
+    "schema_version": { "type": "string", "pattern": "^cea-nasa7\\/v1$" },
+    "species": { "type": "string", "minLength": 1 },
+    "aliases": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "mw_g_per_mol": { "type": "number" },
+    "hf298_kJ_per_mol": { "type": "number" },
+    "elements": { "type": "object", "additionalProperties": { "type": "number" } },
+    "source": { "type": "string" },
+    "ranges": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["t_low_K", "t_high_K", "a"],
+        "properties": {
+          "t_low_K": { "type": "number" },
+          "t_high_K": { "type": "number" },
+          "a": { "type": "array", "minItems": 10, "maxItems": 10, "items": { "type": "number" } }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
+
