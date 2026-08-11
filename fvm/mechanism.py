@@ -3,29 +3,41 @@
 Design intent
 -------------
 The bed solver should not know what propellant it is running. It asks a
-:class:`Mechanism` for two things at every station -- species production rates
-and heat release -- and everything propellant-specific lives behind that
-interface. Adding hydrogen peroxide or a HAN-based propellant means writing a
-new subclass, not touching the solver.
+:class:`Mechanism` for species production rates and heat release, and
+everything propellant-specific lives behind that interface. Adding hydrogen
+peroxide or a HAN-based propellant means writing a new subclass, not touching
+the solver.
 
-Two decisions worth stating, because they are what keep this honest:
+Heats of reaction are computed from the species enthalpies in :mod:`fvm.chem`,
+never tabulated. A hard-coded dH can silently disagree with the thermodynamic
+data it sits beside; a derived one cannot.
 
-**Heats of reaction are computed, never tabulated.** They fall out of the
-species enthalpies in :mod:`fvm.chem`. A hard-coded dH can silently disagree
-with the thermodynamic data it sits beside; a computed one cannot.
+Provenance of the hydrazine model
+---------------------------------
+Rate parameters and correlations come from Kesten's UARL work under NASA
+contract NAS 7-458, both reports being in ``docs/``:
 
-**Rates combine kinetics and mass transfer in series.** For a catalytic bed
-the reactant must reach the surface before it can react::
+* F910461-12, *Analytical Study of Catalytic Reactors for Hydrazine
+  Decomposition*, First Annual Progress Report, May 1967.
+* G910461-30, *Computer Programs Manual*, August 1968.
 
-    1/r = 1/r_kinetic + 1/r_mass_transfer
+Kesten is candid about what these numbers are, and so is this module:
 
-This matters more than it looks. Hydrazine decomposition over Shell 405 is
-fast enough that it is usually diffusion-limited rather than kinetically
-limited, so the answer is set by the Sherwood correlation -- which is
-reasonably well established -- rather than by Arrhenius constants, which are
-scattered across the literature and are the least trustworthy numbers in this
-module. Where kinetics does control (ammonia dissociation), the parameters are
-flagged as calibration targets rather than presented as fact.
+* The hydrazine catalytic activation energy (2500 degR) was, in his words,
+  "chosen rather arbitrarily"; the pre-exponential was then fitted to engine
+  test data. This matters less than it sounds, because that step is
+  diffusion-controlled -- a claim his own report makes and which a test here
+  asserts.
+* The ammonia rate's hydrogen-inhibition order was measured on *platinum*
+  (Melton; Logan and Kemball) and assumed to carry over to Shell 405.
+  Kesten: "this assumption remains untested".
+* The ammonia pre-exponential is a fit, quoted as 0.3e11 from his steady-state
+  model and 1e11 from his transient model, with the true value "probably
+  between" them. That factor of three is the honest uncertainty on the single
+  parameter that most controls predicted dissociation.
+
+Treat all of them as well-founded defaults to be re-fitted against your own
+bed data, not as physical constants.
 """
 import numpy as np
 
@@ -33,63 +45,147 @@ from . import chem
 
 RU = chem.RU
 
+# -- unit conversions to and from Kesten's units ----------------------------
+LB_FT3_TO_KG_M3 = 16.018463374
+FT2_S_TO_M2_S = 0.09290304
+RANKINE_TO_KELVIN = 5.0 / 9.0
+PSIA_TO_PA = 6894.757293
+
+
+def activation_from_degR(Ea_over_R_degR):
+    """Convert Kesten's ``Ea/R`` in deg R to an activation energy in J/kmol."""
+    return RU * Ea_over_R_degR * RANKINE_TO_KELVIN
+
+
+def prefactor_to_SI(A_imperial, net_concentration_order):
+    """Convert a rate pre-exponential from Kesten's units into SI.
+
+    First-order rates need no conversion: ``r = A C`` has ``A`` in 1/s in any
+    unit system. Rates whose concentration exponents do not sum to one do
+    need it -- the ammonia rate is first order in NH3 and order -1.6 in H2, so
+    its pre-exponential carries units of ``(lb/ft^3)^1.6 / s`` and converting
+    it is not optional.
+
+    ``net_concentration_order`` is the sum of all concentration exponents
+    (1.0 - 1.6 = -0.6 for the ammonia rate).
+    """
+    return A_imperial * LB_FT3_TO_KG_M3 ** (1.0 - net_concentration_order)
+
+
+class RateState:
+    """Everything a rate law may need at one station."""
+
+    __slots__ = ("T_gas", "T_solid", "p", "C", "rho", "mu", "G", "bed", "mixture")
+
+    def __init__(self, T_gas, T_solid, p, C, rho, mu, G, bed, mixture):
+        self.T_gas, self.T_solid, self.p = T_gas, T_solid, p
+        self.C, self.rho, self.mu = C, rho, mu
+        self.G, self.bed, self.mixture = G, bed, mixture
+
+    def conc(self, name):
+        """Mass concentration of a species [kg/m^3]."""
+        return self.C[self.mixture.index(name)]
+
 
 # ---------------------------------------------------------------------------
 # rate laws
 # ---------------------------------------------------------------------------
-class ArrheniusRate:
-    """``r = A exp(-Ea/(Ru T)) C^order``, in kmol/(m^3 bed * s).
+class CatalyticRate:
+    """``A exp(-Ea/(Ru T_s)) C_react^m / C_inhib^n``, in kg/(m^3 bed * s).
 
-    ``T`` is the *catalyst* temperature -- the reaction happens on the solid,
-    and in a two-temperature bed the solid runs hotter than the gas in the
-    decomposition zone.
+    The temperature is the *catalyst* temperature: the reaction happens on the
+    solid, which in a two-temperature bed runs hotter than the gas wherever
+    decomposition is active.
+
+    ``inhibitor`` implements product inhibition -- for ammonia over platinum
+    and (by assumption) Shell 405, hydrogen suppresses the reaction, which is
+    a self-limiting feedback that keeps a bed from running away toward complete
+    dissociation.
     """
 
-    def __init__(self, A, Ea, order=1.0, name=""):
+    def __init__(self, A, Ea, reactant, order=1.0,
+                 inhibitor=None, inhibitor_order=0.0, inhibitor_floor=0.0,
+                 name=""):
         self.A = float(A)
-        self.Ea = float(Ea)          # J/kmol
+        self.Ea = float(Ea)
+        self.reactant = reactant
         self.order = float(order)
+        self.inhibitor = inhibitor
+        self.inhibitor_order = float(inhibitor_order)
+        self.inhibitor_floor = float(inhibitor_floor)
         self.name = name
 
-    def __call__(self, T_solid, C, **_):
-        C = np.maximum(C, 0.0)
-        return self.A * np.exp(-self.Ea / (RU * np.maximum(T_solid, 1.0))) * C ** self.order
+    def __call__(self, st):
+        C = np.maximum(st.conc(self.reactant), 0.0)
+        r = self.A * np.exp(-self.Ea / (RU * np.maximum(st.T_solid, 1.0))) * C ** self.order
+        if self.inhibitor is not None:
+            Ci = np.maximum(st.conc(self.inhibitor), self.inhibitor_floor)
+            r = r / Ci ** self.inhibitor_order
+        return r
 
     def __repr__(self):
-        return (f"ArrheniusRate(A={self.A:.3e}, "
-                f"Ea={self.Ea / 1e6:.1f} MJ/kmol, n={self.order})")
+        s = f"CatalyticRate(A={self.A:.3e}, Ea={self.Ea / 1e6:.2f} MJ/kmol"
+        if self.inhibitor:
+            s += f", 1/[{self.inhibitor}]^{self.inhibitor_order}"
+        return s + ")"
 
 
-class MassTransferRate:
-    """Diffusion of reactant from the bulk gas to the catalyst surface.
+class HomogeneousRate(CatalyticRate):
+    """Same form, but evaluated at the *gas* temperature and with no catalyst.
 
-    ``r = k_m a_v C``, with the mass-transfer coefficient from the
-    Wakao-Funazkri packed-bed correlation
-
-        Sh = 2 + 1.1 Sc^(1/3) Re_p^0.6
-
-    Binary diffusivities are replaced by a fixed Schmidt number (~0.7 for
-    light gases), which is accurate enough given everything else here and
-    avoids carrying a diffusion database.
+    Kesten carries a gas-phase thermal decomposition path alongside the
+    catalytic one; it is negligible cold and contributes once the bed is hot.
     """
 
-    def __init__(self, Sc=0.7):
-        self.Sc = float(Sc)
+    def __call__(self, st):
+        C = np.maximum(st.conc(self.reactant), 0.0)
+        return self.A * np.exp(-self.Ea / (RU * np.maximum(st.T_gas, 1.0))) * C ** self.order
 
-    def __call__(self, C, rho, mu, G, bed, **_):
-        d_p = bed.d_p
-        Re_p = np.maximum(G * d_p / np.maximum(mu, 1e-12), 1e-6)
-        Sh = 2.0 + 1.1 * self.Sc ** (1.0 / 3.0) * Re_p ** 0.6
-        D = mu / (np.maximum(rho, 1e-12) * self.Sc)
-        k_m = Sh * D / d_p
-        return k_m * bed.a_v * np.maximum(C, 0.0)
+
+class KestenMassTransfer:
+    """Film diffusion to the catalyst surface, using Kesten's own correlation.
+
+    From subroutine ``KCF`` in the UARL listings::
+
+        k_c = 0.61 (G/rho) Sc^-0.667 [G/(a_p mu)]^-0.41
+
+    a Colburn j-factor form with the Reynolds number built on surface area per
+    unit bed volume rather than particle diameter. Every group is
+    dimensionless except ``G/rho``, so the correlation carries across unit
+    systems unchanged.
+
+    Diffusivity is corrected from its STP value the way the Fortran does::
+
+        D(T, p) = D_STP (p_ref/p) (T/T_ref)^1.823
+    """
+
+    T_REF = 492.0 * RANKINE_TO_KELVIN        # 273.15 K
+    P_REF = 14.7 * PSIA_TO_PA                # 101325 Pa
+
+    def __init__(self, D_stp, species):
+        self.D_stp = float(D_stp)            # m^2/s at T_REF, P_REF
+        self.species = species
+
+    def diffusivity(self, T, p):
+        return self.D_stp * (self.P_REF / np.maximum(p, 1.0)) * (T / self.T_REF) ** 1.823
+
+    def __call__(self, st):
+        D = self.diffusivity(st.T_gas, st.p)
+        rho = np.maximum(st.rho, 1e-12)
+        mu = np.maximum(st.mu, 1e-12)
+        Sc = mu / (rho * D)
+        Re_a = np.maximum(st.G / (st.bed.a_v * mu), 1e-12)
+        kc = 0.61 * (st.G / rho) * Sc ** -0.667 * Re_a ** -0.41
+        return kc * st.bed.a_v * np.maximum(st.conc(self.species), 0.0)
 
 
 def series(r_kin, r_mt):
     """Combine kinetic and mass-transfer rates as resistances in series.
 
     Smooth by construction, unlike ``min(...)``, which would put a kink in the
-    right-hand side and upset a stiff integrator.
+    right-hand side and upset a stiff integrator. It also bounds the rate: no
+    reaction can outrun the supply of reactant to the surface, which is what
+    keeps the hydrogen-inhibited ammonia rate finite as H2 gets small.
     """
     r_kin = np.maximum(r_kin, 0.0)
     r_mt = np.maximum(r_mt, 0.0)
@@ -102,21 +198,21 @@ def series(r_kin, r_mt):
 class Reaction:
     """One reaction: stoichiometry plus a rate law.
 
-    Stoichiometry is given as dicts of species name -> moles, written per mole
-    of the *limiting reactant* so that the rate has an unambiguous meaning.
+    Stoichiometry is written per mole of the *limiting reactant*, so the rate
+    has an unambiguous meaning. Rate laws return a mass rate for that species,
+    which is divided by its molecular weight to give reaction extent.
     """
 
-    def __init__(self, reactants, products, limiting, rate_kinetic,
+    def __init__(self, reactants, products, limiting, rate,
                  mass_transfer=None, name=""):
         self.reactants = dict(reactants)
         self.products = dict(products)
         self.limiting = limiting
-        self.rate_kinetic = rate_kinetic
+        self.rate = rate
         self.mass_transfer = mass_transfer
         self.name = name or f"{'+'.join(self.reactants)} -> {'+'.join(self.products)}"
 
     def stoichiometry(self, mixture):
-        """Net moles of each species per mole of reaction, as a vector."""
         nu = np.zeros(mixture.n)
         for k, v in self.reactants.items():
             nu[mixture.index(k)] -= v
@@ -125,7 +221,6 @@ class Reaction:
         return nu
 
     def check_atom_balance(self, atoms):
-        """Verify element conservation. ``atoms`` maps species -> {element: n}."""
         bal = {}
         for name, v in self.reactants.items():
             for el, n in atoms[name].items():
@@ -139,7 +234,6 @@ class Reaction:
 class Mechanism:
     """Base class. Subclass this to add a propellant."""
 
-    #: species participating, in a fixed order
     species_names = ()
 
     def __init__(self):
@@ -155,49 +249,39 @@ class Mechanism:
     def _build_reactions(self):
         raise NotImplementedError
 
-    # -- inlet ------------------------------------------------------------
     def inlet_composition(self):
-        """Mass fractions entering the bed."""
         raise NotImplementedError
 
     def inlet_enthalpy(self, T_feed):
-        """Specific enthalpy of the feed [J/kg], including any phase change."""
         raise NotImplementedError
 
     # -- rates ------------------------------------------------------------
     def rates(self, T_gas, T_solid, p, Y, G, bed, mu=None):
-        """Reaction rates [kmol/(m^3 bed * s)], one per reaction."""
+        """Reaction extents [kmol/(m^3 bed * s)], one per reaction."""
         Y = np.asarray(Y, dtype=float)
-        R = self.mixture.R(Y)
-        rho = p / (R * np.maximum(T_gas, 1.0))
+        rho = p / (self.mixture.R(Y) * np.maximum(T_gas, 1.0))
         if mu is None:
             mu = self.viscosity(T_gas, Y)
+        st = RateState(T_gas, T_solid, p, rho * Y, rho, mu, G, bed, self.mixture)
+
         out = []
         for rxn in self.reactions:
-            i = self.mixture.index(rxn.limiting)
-            C = rho * Y[i] / self._MW[i]                   # kmol/m^3
-            r_k = rxn.rate_kinetic(T_solid=T_solid, C=C)
-            if rxn.mass_transfer is None:
-                out.append(r_k)
-            else:
-                r_m = rxn.mass_transfer(C=C, rho=rho, mu=mu, G=G, bed=bed)
-                out.append(series(r_k, r_m))
+            r = rxn.rate(st)                                   # kg/(m^3 s)
+            if rxn.mass_transfer is not None:
+                r = series(r, rxn.mass_transfer(st))
+            out.append(r / self._MW[self.mixture.index(rxn.limiting)])
         return np.array(out)
 
     def production_rates(self, r):
-        """Species mass production [kg/(m^3 bed * s)] from reaction rates."""
+        """Species mass production [kg/(m^3 bed * s)] from reaction extents."""
         r = np.atleast_1d(r)
         return np.tensordot(r, self.nu, axes=(0, 0)) * self._MW
 
     def heat_release(self, T, r):
-        """Heat released [W/m^3 bed]; positive is exothermic.
-
-        Computed from species enthalpies, so it is automatically consistent
-        with the thermodynamic data rather than a separately tabulated number.
-        """
+        """Heat released [W/m^3 bed]; positive is exothermic."""
         r = np.atleast_1d(r)
         h_mole = np.array([s.h_mole(T) for s in self.mixture.species])
-        dH = self.nu @ h_mole                              # J/kmol of reaction
+        dH = self.nu @ h_mole
         return -float(np.sum(r * dH)) if np.ndim(r) == 1 else -np.sum(
             r * dH[:, None], axis=0)
 
@@ -208,19 +292,12 @@ class Mechanism:
 
     # -- transport --------------------------------------------------------
     def viscosity(self, T, Y=None):
-        """Mixture viscosity [Pa*s], power law about a reference point.
-
-        Crude, but the bed answer is far more sensitive to the rate model and
-        the bed geometry than to a few percent in mu.
-        """
         return 3.5e-5 * (np.asarray(T, dtype=float) / 1000.0) ** 0.7
 
     def conductivity(self, T, Y=None):
         return self.viscosity(T, Y) * self.mixture.cp(T, Y) / 0.7
 
-    # -- diagnostics ------------------------------------------------------
     def check_atom_balance(self):
-        """Return {reaction name: imbalance} for any reaction that fails."""
         bad = {}
         for rxn in self.reactions:
             imbalance = rxn.check_atom_balance(self.atoms)
@@ -236,60 +313,109 @@ class Mechanism:
 # ---------------------------------------------------------------------------
 # hydrazine
 # ---------------------------------------------------------------------------
-#: Enthalpy of formation of *liquid* hydrazine at 298.15 K [J/kmol].
-#: The bed is fed liquid, so the 44.7 MJ/kmol vaporisation enthalpy is a real
-#: energy debt the decomposition has to pay before it heats anything.
-H_F_N2H4_LIQUID = 50.63e6
-H_VAP_N2H4 = 44.72e6
+H_F_N2H4_LIQUID = 50.63e6      # J/kmol, liquid at 298.15 K
+H_VAP_N2H4 = 44.72e6           # J/kmol
+CP_N2H4_LIQUID = 0.7332 * 4186.8       # J/(kg*K) -- Kesten's CFL, 0.7332 Btu/lb-degR
+
+#: Kesten's parameters, in his units. Converted on construction.
+KESTEN = dict(
+    A_N2H4_cat=1.0e10,          # 1/s
+    EaR_N2H4_cat=2500.0,        # deg R   ("chosen rather arbitrarily")
+    A_NH3_cat=0.3e11,           # (lb/ft^3)^1.6 / s   (steady-state fit; 1e11 transient)
+    EaR_NH3_cat=50000.0,        # deg R
+    A_N2H4_hom=2.14e10,         # 1/s
+    EaR_N2H4_hom=33000.0,       # deg R
+    D_N2H4_stp=0.95e-4,         # ft^2/s at STP
+    D_NH3_stp=0.17e-3,          # ft^2/s at STP
+)
 
 
 class HydrazineShell405(Mechanism):
     """Hydrazine over an iridium-on-alumina catalyst (Shell 405 and kin).
 
-    Two steps, written per mole of limiting reactant::
+    Three paths, each written per mole of its limiting reactant::
 
-        N2H4 -> 4/3 NH3 + 1/3 N2        exothermic, very fast
-        NH3  -> 1/2 N2  + 3/2 H2        endothermic, kinetically controlled
+        N2H4 -> 4/3 NH3 + 1/3 N2      catalytic, diffusion-controlled
+        N2H4 -> 4/3 NH3 + 1/3 N2      homogeneous, gas phase
+        NH3  -> 1/2 N2  + 3/2 H2      catalytic, kinetically controlled,
+                                      inhibited by hydrogen
 
-    The competition between them is the whole design problem. Step 1 sets the
-    temperature; step 2 then eats some of it back while lowering the molecular
-    weight. Isp peaks at partial dissociation, so a bed is sized to complete
-    step 1 and control how far step 2 runs.
+    The competition is the design problem. Decomposition sets the temperature;
+    dissociation then eats some of it back while lowering the molecular
+    weight, so c* peaks at partial dissociation and a bed is sized to complete
+    the first step and control how far the second runs.
 
-    Rate parameters
-    ---------------
-    ``A1``/``Ea1`` are deliberately set fast: step 1 over an active iridium
-    catalyst is diffusion-limited in practice, so the series resistance hands
-    control to the Sherwood correlation and the result is insensitive to them.
-
-    ``A2``/``Ea2`` genuinely control the answer and are **calibration targets,
-    not established constants**. Published values for ammonia dissociation over
-    Shell 405 vary by orders of magnitude with catalyst age, loading and
-    pretreatment. Fit them to your own bed data before trusting a dissociation
-    fraction from this model.
+    Parameters
+    ----------
+    nH2 : float
+        Hydrogen inhibition order. Kesten's own sources disagree -- Melton
+        reports 1.0, Logan and Kemball 1.6 -- and so do two copies of his
+        Fortran: ``PARAM.f`` divides by ``C1**1.6`` while ``MAIN.f`` uses
+        ``C1**1.0``. The accompanying ``kinetics.json`` picks 1.6, which is
+        the default here.
+    A_NH3 : float
+        Ammonia pre-exponential in Kesten's units. Default is his
+        steady-state fit; his transient model gives 1e11 and he expects the
+        truth in between. This is the parameter worth fitting first.
+    Y_H2_floor : float
+        Hydrogen mass fraction floor used only to keep ``1/C_H2^n`` finite
+        where the bed has produced ammonia but almost no hydrogen. The
+        original Fortran has no such floor, so the singularity is real and
+        merely never reached by its integration path. Results should be
+        checked for sensitivity to this value; the series resistance with mass
+        transfer provides the physical bound, this only removes the numerical
+        one.
     """
 
     species_names = ("N2H4", "NH3", "N2", "H2")
 
-    def __init__(self, A1=1.0e12, Ea1=40.0e6, A2=5.0e8, Ea2=140.0e6, Sc=0.7):
-        self.A1, self.Ea1 = A1, Ea1
-        self.A2, self.Ea2 = A2, Ea2
-        self.Sc = Sc
+    def __init__(self, nH2=1.6, A_NH3=None, Y_H2_floor=1e-4,
+                 include_homogeneous=True, **overrides):
+        k = dict(KESTEN)
+        k.update(overrides)
+        self.k = k
+        self.nH2 = float(nH2)
+        self.A_NH3_imperial = float(k["A_NH3_cat"] if A_NH3 is None else A_NH3)
+        self.Y_H2_floor = float(Y_H2_floor)
+        self.include_homogeneous = bool(include_homogeneous)
         super().__init__()
 
     def _build_reactions(self):
-        return [
-            Reaction({"N2H4": 1.0}, {"NH3": 4.0 / 3.0, "N2": 1.0 / 3.0},
-                     limiting="N2H4",
-                     rate_kinetic=ArrheniusRate(self.A1, self.Ea1, 1.0, "N2H4 decomp"),
-                     mass_transfer=MassTransferRate(self.Sc),
-                     name="N2H4 -> 4/3 NH3 + 1/3 N2"),
-            Reaction({"NH3": 1.0}, {"N2": 0.5, "H2": 1.5},
-                     limiting="NH3",
-                     rate_kinetic=ArrheniusRate(self.A2, self.Ea2, 1.0, "NH3 dissoc"),
-                     mass_transfer=MassTransferRate(self.Sc),
-                     name="NH3 -> 1/2 N2 + 3/2 H2"),
+        k = self.k
+        decomp_products = {"NH3": 4.0 / 3.0, "N2": 1.0 / 3.0}
+
+        # The ammonia pre-exponential is the only one whose units depend on
+        # the unit system: its concentration exponents sum to 1 - nH2.
+        A_NH3_SI = prefactor_to_SI(self.A_NH3_imperial, 1.0 - self.nH2)
+        rho_ref = 1.0                       # floor is applied as a concentration
+        rxns = [
+            Reaction({"N2H4": 1.0}, decomp_products, limiting="N2H4",
+                     rate=CatalyticRate(k["A_N2H4_cat"],
+                                        activation_from_degR(k["EaR_N2H4_cat"]),
+                                        reactant="N2H4", name="N2H4 catalytic"),
+                     mass_transfer=KestenMassTransfer(
+                         k["D_N2H4_stp"] * FT2_S_TO_M2_S, "N2H4"),
+                     name="N2H4 -> 4/3 NH3 + 1/3 N2 (catalytic)"),
+            Reaction({"NH3": 1.0}, {"N2": 0.5, "H2": 1.5}, limiting="NH3",
+                     rate=CatalyticRate(A_NH3_SI,
+                                        activation_from_degR(k["EaR_NH3_cat"]),
+                                        reactant="NH3",
+                                        inhibitor="H2", inhibitor_order=self.nH2,
+                                        inhibitor_floor=self.Y_H2_floor * rho_ref,
+                                        name="NH3 catalytic"),
+                     mass_transfer=KestenMassTransfer(
+                         k["D_NH3_stp"] * FT2_S_TO_M2_S, "NH3"),
+                     name="NH3 -> 1/2 N2 + 3/2 H2 (catalytic)"),
         ]
+        if self.include_homogeneous:
+            rxns.append(
+                Reaction({"N2H4": 1.0}, decomp_products, limiting="N2H4",
+                         rate=HomogeneousRate(k["A_N2H4_hom"],
+                                              activation_from_degR(k["EaR_N2H4_hom"]),
+                                              reactant="N2H4", name="N2H4 thermal"),
+                         mass_transfer=None,
+                         name="N2H4 -> 4/3 NH3 + 1/3 N2 (homogeneous)"))
+        return rxns
 
     # -- feed -------------------------------------------------------------
     def inlet_composition(self):
@@ -298,24 +424,29 @@ class HydrazineShell405(Mechanism):
         return Y
 
     def inlet_enthalpy(self, T_feed=298.15):
-        """Enthalpy of the liquid feed [J/kg].
-
-        Referenced to the same scale as the gas-phase species, so the
-        vaporisation enthalpy is carried explicitly rather than assumed away.
-        """
+        """Enthalpy of the liquid feed [J/kg], on the gas-phase scale."""
         MW = self.mixture.MW_k[self.mixture.index("N2H4")]
-        gas = chem.species("N2H4")
-        h_liq_298 = H_F_N2H4_LIQUID
-        cp_liq = 3080.0 * MW                     # J/(kmol*K), liquid hydrazine
-        return (h_liq_298 + cp_liq * (T_feed - 298.15)) / MW
+        return (H_F_N2H4_LIQUID + CP_N2H4_LIQUID * MW * (T_feed - 298.15)) / MW
 
     # -- closed-form limits, useful for checking the solver ----------------
-    def composition_at_dissociation(self, X):
-        """Mass fractions after complete step 1 and a fraction ``X`` of step 2.
+    @staticmethod
+    def X_from_kesten_f(f):
+        """Convert Kesten's dissociation fraction to the two-step convention.
 
-        Per mole of N2H4: ``4/3 (1-X)`` NH3, ``1/3 + 2/3 X`` N2, ``2X`` H2.
-        At ``X = 1`` this is N2H4 -> N2 + 2 H2, as it must be.
+        His footnote (F910461-12 p.11 / G910461-30 p.5) gives
+        ``f_two_step = (3 f + 1) / 4``. His experimentally determined overall
+        reaction already implies 25% of the ammonia has dissociated, so his
+        ``f = 0`` is ``X = 0.25``. Comparing the two directly is wrong by
+        roughly 90 K at typical bed conditions.
         """
+        return (3.0 * np.asarray(f, dtype=float) + 1.0) / 4.0
+
+    @staticmethod
+    def kesten_f_from_X(X):
+        return (4.0 * np.asarray(X, dtype=float) - 1.0) / 3.0
+
+    def composition_at_dissociation(self, X):
+        """Mass fractions after complete step 1 and a fraction ``X`` of step 2."""
         X = float(X)
         return self.mixture.from_moles({
             "N2H4": 0.0,
@@ -325,22 +456,13 @@ class HydrazineShell405(Mechanism):
         })
 
     def adiabatic_temperature(self, X, T_feed=298.15, T_guess=1200.0):
-        """Adiabatic decomposition temperature at dissociation fraction ``X``.
-
-        The classic hydrazine design curve, and a strong check on both the
-        mechanism and the thermodynamic data: it must give roughly 1650 K at
-        X = 0, falling to about 880 K at X = 1.
-        """
+        """Adiabatic decomposition temperature at dissociation fraction ``X``."""
         Y = self.composition_at_dissociation(X)
         h_in = self.inlet_enthalpy(T_feed)
         return float(self.mixture.temperature_from_h(h_in, Y, T_guess=T_guess))
 
     def chamber_conditions(self, X, T_feed=298.15):
-        """(T, MW, gamma, R, c*) at dissociation fraction ``X``.
-
-        This is the handoff to the nozzle solver: everything it needs to build
-        a frozen-composition perfect gas for the expansion.
-        """
+        """(T, MW, gamma, R, c*) at dissociation fraction ``X``."""
         Y = self.composition_at_dissociation(X)
         T = self.adiabatic_temperature(X, T_feed)
         MW = float(self.mixture.MW(Y))
@@ -350,7 +472,6 @@ class HydrazineShell405(Mechanism):
         return dict(T=T, MW=MW, gamma=g, R=R, cstar=float(cstar), Y=Y)
 
 
-#: Registry so drivers can select a propellant by name.
 MECHANISMS = {"hydrazine": HydrazineShell405}
 
 

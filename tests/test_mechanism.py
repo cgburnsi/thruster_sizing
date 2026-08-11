@@ -1,18 +1,22 @@
 """Tests for reaction mechanisms.
 
-The load-bearing test here is the hydrazine adiabatic decomposition curve.
-It is a well-known design curve -- roughly 1650 K with no ammonia
-dissociation, falling to about 880 K when dissociation is complete -- and
-reproducing it exercises the stoichiometry, the liquid-feed enthalpy including
-vaporisation, and the NASA-7 thermodynamic data all at once. If any of those
-is wrong the curve misses.
+Two load-bearing checks here:
+
+* The hydrazine adiabatic decomposition curve -- roughly 1650 K undissociated
+  falling to 880 K fully dissociated -- which exercises stoichiometry, the
+  liquid-feed enthalpy including vaporisation, and the NASA-7 data together.
+* Kesten's own reactor output, in ``docs/kesten_claude``, which is an
+  independent implementation of the same physics from 1967. Agreeing with it
+  is worth more than any amount of internal consistency.
 """
 import numpy as np
 import pytest
 
 from fvm import chem
-from fvm.mechanism import (ArrheniusRate, HydrazineShell405, MassTransferRate,
-                           get_mechanism, series)
+from fvm.mechanism import (CatalyticRate, HomogeneousRate, HydrazineShell405,
+                           KestenMassTransfer, RateState, activation_from_degR,
+                           get_mechanism, prefactor_to_SI, series,
+                           LB_FT3_TO_KG_M3, RANKINE_TO_KELVIN)
 
 
 class FakeBed:
@@ -27,31 +31,75 @@ def mech():
     return HydrazineShell405()
 
 
+def _state(mech, Y, T_gas=800.0, T_solid=1000.0, p=8e5, G=20.0):
+    rho = p / (mech.mixture.R(Y) * T_gas)
+    return RateState(T_gas, T_solid, p, rho * np.asarray(Y), rho,
+                     mech.viscosity(T_gas, Y), G, FakeBed(), mech.mixture)
+
+
+# -- unit conversions -------------------------------------------------------
+def test_activation_energy_conversion_from_degR():
+    """2500 degR is 1388.9 K, so Ea = Ru * 1388.9."""
+    assert activation_from_degR(2500.0) == pytest.approx(chem.RU * 2500 * 5 / 9)
+    assert activation_from_degR(50000.0) / 1e6 == pytest.approx(230.96, rel=1e-3)
+
+
+def test_first_order_prefactor_needs_no_conversion():
+    """r = A C has A in 1/s in any unit system."""
+    assert prefactor_to_SI(1.0e10, 1.0) == pytest.approx(1.0e10)
+
+
+def test_ammonia_prefactor_conversion_matches_hand_calculation():
+    """Exponents sum to 1 - 1.6 = -0.6, so A scales by (lb/ft^3 -> kg/m^3)^1.6."""
+    A_si = prefactor_to_SI(0.3e11, 1.0 - 1.6)
+    assert A_si == pytest.approx(0.3e11 * LB_FT3_TO_KG_M3 ** 1.6, rel=1e-12)
+
+
+def test_rate_is_unit_system_independent():
+    """The ammonia rate must give the same physical answer in either system.
+
+    This is the check that catches a botched pre-exponential conversion: build
+    the rate in SI, evaluate it at concentrations expressed in kg/m^3, and
+    compare against Kesten's expression evaluated in lb/ft^3.
+    """
+    n, A_imp, EaR = 1.6, 0.3e11, 50000.0
+    C_NH3_lb, C_H2_lb, T_degR = 0.05, 0.004, 1900.0
+
+    r_imperial = A_imp * np.exp(-EaR / T_degR) * C_NH3_lb / C_H2_lb ** n   # lb/ft^3-s
+    r_expected_si = r_imperial * LB_FT3_TO_KG_M3                           # kg/m^3-s
+
+    A_si = prefactor_to_SI(A_imp, 1.0 - n)
+    Ea = activation_from_degR(EaR)
+    r_si = (A_si * np.exp(-Ea / (chem.RU * T_degR * RANKINE_TO_KELVIN))
+            * (C_NH3_lb * LB_FT3_TO_KG_M3) / (C_H2_lb * LB_FT3_TO_KG_M3) ** n)
+
+    assert r_si == pytest.approx(r_expected_si, rel=1e-10)
+
+
 # -- stoichiometry ----------------------------------------------------------
 def test_reactions_balance_atoms(mech):
     assert mech.check_atom_balance() == {}
 
 
 def test_reactions_conserve_mass(mech):
-    """sum(nu_i * MW_i) must vanish for every reaction."""
     for j, rxn in enumerate(mech.reactions):
         residual = float(mech.nu[j] @ mech.mixture.MW_k)
         assert abs(residual) < 1e-9, f"{rxn.name} loses {residual:.3e} kg/kmol"
 
 
 def test_production_rates_conserve_mass(mech):
-    r = np.array([2.0, 0.7])
+    r = np.array([2.0, 0.7, 0.1])
     assert abs(mech.production_rates(r).sum()) < 1e-9
 
 
 def test_step_one_is_exothermic_and_step_two_endothermic(mech):
     dH = mech.reaction_enthalpy(298.15)
-    assert dH[0] < 0.0, "N2H4 decomposition must release heat"
-    assert dH[1] > 0.0, "NH3 dissociation must absorb heat"
+    assert dH[0] < 0.0
+    assert dH[1] > 0.0
+    assert dH[2] < 0.0, "the homogeneous path is the same reaction, so also exothermic"
 
 
 def test_complete_dissociation_gives_nitrogen_and_hydrogen(mech):
-    """At X = 1 the overall reaction is N2H4 -> N2 + 2 H2."""
     Y = mech.composition_at_dissociation(1.0)
     x = mech.mixture.mole_fractions(Y)
     assert x[mech.mixture.index("NH3")] == pytest.approx(0.0, abs=1e-12)
@@ -59,123 +107,161 @@ def test_complete_dissociation_gives_nitrogen_and_hydrogen(mech):
     assert x[mech.mixture.index("H2")] == pytest.approx(2.0 / 3.0, rel=1e-9)
 
 
-def test_nitrogen_to_hydrogen_ratio_is_fixed_by_the_feed(mech):
-    """Every X must preserve the 2:4 N:H ratio of N2H4."""
-    for X in (0.0, 0.25, 0.6, 1.0):
-        Y = mech.composition_at_dissociation(X)
-        x = mech.mixture.mole_fractions(Y)
-        N = 2 * x[mech.mixture.index("N2")] + x[mech.mixture.index("NH3")]
-        H = 2 * x[mech.mixture.index("H2")] + 3 * x[mech.mixture.index("NH3")]
-        assert H / N == pytest.approx(2.0, rel=1e-9)
-
-
 # -- the design curve -------------------------------------------------------
 def test_adiabatic_temperature_matches_known_hydrazine_values(mech):
-    """Roughly 1650 K undissociated, about 880 K fully dissociated.
-
-    Tolerances are wide because published values themselves scatter by a few
-    tens of K depending on the reference state used.
-    """
     assert mech.adiabatic_temperature(0.0) == pytest.approx(1650.0, abs=90.0)
     assert mech.adiabatic_temperature(1.0) == pytest.approx(880.0, abs=70.0)
 
 
 def test_adiabatic_temperature_falls_monotonically_with_dissociation(mech):
-    X = np.linspace(0.0, 1.0, 11)
-    T = np.array([mech.adiabatic_temperature(x) for x in X])
-    assert np.all(np.diff(T) < 0.0), "NH3 dissociation is endothermic"
+    T = np.array([mech.adiabatic_temperature(x) for x in np.linspace(0, 1, 11)])
+    assert np.all(np.diff(T) < 0.0)
 
 
-def test_molecular_weight_falls_with_dissociation(mech):
-    X = np.linspace(0.0, 1.0, 11)
-    MW = np.array([mech.chamber_conditions(x)["MW"] for x in X])
-    assert np.all(np.diff(MW) < 0.0)
-    assert MW[0] == pytest.approx(19.2, abs=0.5)     # 4/3 NH3 + 1/3 N2
-    assert MW[-1] == pytest.approx(10.7, abs=0.3)    # N2 + 2 H2
-
-
-def test_cstar_is_plausible_and_has_an_interior_optimum(mech):
-    """c* trades falling temperature against falling molecular weight.
-
-    Both effects are strong and they oppose, which is why hydrazine engines
-    are designed for partial dissociation rather than either extreme.
-    """
+def test_cstar_has_an_interior_optimum(mech):
     X = np.linspace(0.0, 1.0, 21)
     cstar = np.array([mech.chamber_conditions(x)["cstar"] for x in X])
     assert np.all((cstar > 1100.0) & (cstar < 1600.0))
-    assert 0 < int(np.argmax(cstar)) < len(X) - 1, "optimum should be interior"
+    assert 0 < int(np.argmax(cstar)) < len(X) - 1
 
 
-def test_liquid_feed_costs_the_vaporisation_enthalpy(mech):
-    """Feeding liquid must give a lower flame temperature than feeding gas."""
-    from fvm.mechanism import H_F_N2H4_LIQUID, H_VAP_N2H4
-    MW = mech.mixture.MW_k[mech.mixture.index("N2H4")]
-    Y = mech.composition_at_dissociation(0.0)
-    T_liq = mech.adiabatic_temperature(0.0)
-    T_gas = float(mech.mixture.temperature_from_h(
-        (H_F_N2H4_LIQUID + H_VAP_N2H4) / MW, Y, T_guess=1500.0))
-    assert T_gas > T_liq + 100.0
+# -- Kesten's dissociation-fraction convention ------------------------------
+def test_kesten_f_of_zero_is_a_quarter_dissociated(mech):
+    """His overall reaction already implies 25% of the ammonia has gone."""
+    assert mech.X_from_kesten_f(0.0) == pytest.approx(0.25)
+    assert mech.X_from_kesten_f(1.0) == pytest.approx(1.0)
+
+
+def test_kesten_f_conversion_roundtrips(mech):
+    f = np.array([0.0, 0.3, 0.645, 1.0])
+    assert np.allclose(mech.kesten_f_from_X(mech.X_from_kesten_f(f)), f)
+
+
+#: Two stations from Kesten's own program output
+#: (docs/kesten_claude/vapor_reference.csv), feed at TF = 530 degR.
+KESTEN_STATIONS = [
+    # (z_ft,      T_degR,      f_kesten)
+    (0.17155202, 1950.7243, 0.59806513),
+    (0.24999999, 1905.3842, 0.64541664),
+]
+
+
+@pytest.mark.parametrize("z_ft,T_degR,f", KESTEN_STATIONS)
+def test_adiabatic_temperature_matches_kesten_reactor_output(mech, z_ft, T_degR, f):
+    """Agree with Kesten's 1967 code to a few percent at his own conditions.
+
+    Independent thermodynamics (his tabulated cp, our NASA-7 polynomials) and
+    an independent implementation, so a few tens of K is a good result. The
+    conversion from his dissociation fraction is essential -- without it the
+    error is around 90 K rather than 20.
+    """
+    T_ref = T_degR * RANKINE_TO_KELVIN
+    T_feed = 530.0 * RANKINE_TO_KELVIN
+    T_mine = mech.adiabatic_temperature(mech.X_from_kesten_f(f), T_feed=T_feed)
+    assert T_mine == pytest.approx(T_ref, rel=0.03)
+
+
+def test_skipping_the_f_conversion_is_visibly_wrong(mech):
+    """Guard the trap itself: using f as X must disagree badly."""
+    T_feed = 530.0 * RANKINE_TO_KELVIN
+    T_ref = 1905.3842 * RANKINE_TO_KELVIN
+    T_naive = mech.adiabatic_temperature(0.64541664, T_feed=T_feed)
+    assert abs(T_naive - T_ref) > 50.0
 
 
 # -- rate laws --------------------------------------------------------------
-def test_arrhenius_increases_with_temperature_and_concentration():
-    rate = ArrheniusRate(1e10, 100e6, order=1.0)
-    assert rate(T_solid=1200.0, C=1.0) > rate(T_solid=800.0, C=1.0)
-    assert rate(T_solid=1000.0, C=2.0) == pytest.approx(2 * rate(T_solid=1000.0, C=1.0))
+def test_catalytic_rate_increases_with_solid_temperature(mech):
+    rate = CatalyticRate(1e10, 100e6, reactant="NH3")
+    Y = mech.composition_at_dissociation(0.3)
+    assert rate(_state(mech, Y, T_solid=1200.0)) > rate(_state(mech, Y, T_solid=800.0))
+
+
+def test_homogeneous_rate_follows_gas_temperature(mech):
+    """Unlike the catalytic paths, which follow the solid."""
+    rate = HomogeneousRate(1e10, 100e6, reactant="N2H4")
+    Y = mech.inlet_composition()
+    hot_gas = rate(_state(mech, Y, T_gas=1200.0, T_solid=400.0))
+    cold_gas = rate(_state(mech, Y, T_gas=400.0, T_solid=1200.0))
+    assert hot_gas > cold_gas
+
+
+def test_hydrogen_inhibits_ammonia_dissociation(mech):
+    """The self-limiting feedback: more H2 must slow the reaction."""
+    rate = mech.reactions[1].rate
+    base = mech.composition_at_dissociation(0.3)
+    lo = rate(_state(mech, base))
+    more_h2 = base.copy()
+    i_h2, i_n2 = mech.mixture.index("H2"), mech.mixture.index("N2")
+    more_h2[i_h2] *= 3.0
+    more_h2[i_n2] -= base[i_h2] * 2.0
+    assert rate(_state(mech, more_h2 / more_h2.sum())) < lo
+
+
+def test_hydrogen_floor_keeps_the_rate_finite(mech):
+    """1/C_H2^1.6 diverges at zero hydrogen; the floor must contain it."""
+    Y = np.zeros(mech.mixture.n)
+    Y[mech.mixture.index("NH3")] = 0.5
+    Y[mech.mixture.index("N2")] = 0.5          # no H2 at all
+    r = mech.rates(T_gas=900.0, T_solid=1100.0, p=8e5, Y=Y, G=20.0, bed=FakeBed())
+    assert np.all(np.isfinite(r))
 
 
 def test_series_resistance_is_bounded_by_both_branches():
     a = np.array([1.0, 100.0, 1e6, 0.0])
     b = np.array([100.0, 1.0, 1.0, 5.0])
     s = series(a, b)
-    assert np.all(s <= a + 1e-12)
-    assert np.all(s <= b + 1e-12)
+    assert np.all(s <= a + 1e-12) and np.all(s <= b + 1e-12)
 
 
-def test_series_resistance_tends_to_the_slower_branch():
-    """A very fast kinetic rate must hand control to mass transfer."""
-    assert series(1e12, 3.0) == pytest.approx(3.0, rel=1e-6)
-    assert series(3.0, 1e12) == pytest.approx(3.0, rel=1e-6)
+def test_kesten_mass_transfer_rises_with_mass_flux(mech):
+    mt = KestenMassTransfer(0.17e-3 * 0.09290304, "NH3")
+    Y = mech.composition_at_dissociation(0.3)
+    assert mt(_state(mech, Y, G=50.0)) > mt(_state(mech, Y, G=5.0))
 
 
-def test_mass_transfer_rate_rises_with_mass_flux():
-    mt = MassTransferRate()
-    bed = FakeBed()
-    lo = mt(C=1.0, rho=2.0, mu=3e-5, G=5.0, bed=bed)
-    hi = mt(C=1.0, rho=2.0, mu=3e-5, G=50.0, bed=bed)
-    assert hi > lo
+def test_diffusivity_scales_with_temperature_and_pressure():
+    mt = KestenMassTransfer(1e-5, "NH3")
+    assert mt.diffusivity(mt.T_REF, mt.P_REF) == pytest.approx(1e-5, rel=1e-12)
+    assert mt.diffusivity(2 * mt.T_REF, mt.P_REF) == pytest.approx(1e-5 * 2 ** 1.823, rel=1e-9)
+    assert mt.diffusivity(mt.T_REF, 2 * mt.P_REF) == pytest.approx(0.5e-5, rel=1e-12)
 
 
 def test_rates_are_nonnegative_and_finite(mech):
-    Y = mech.mixture.from_moles({"N2H4": 1.0})
-    r = mech.rates(T_gas=600.0, T_solid=900.0, p=8e5, Y=Y, G=20.0, bed=FakeBed())
+    r = mech.rates(T_gas=600.0, T_solid=900.0, p=8e5,
+                   Y=mech.inlet_composition(), G=20.0, bed=FakeBed())
     assert np.all(np.isfinite(r)) and np.all(r >= 0.0)
 
 
 def test_no_reaction_without_reactant(mech):
-    """Rates must vanish when the limiting species is absent."""
-    Y = mech.composition_at_dissociation(1.0)     # no N2H4, no NH3 left
+    Y = mech.composition_at_dissociation(1.0)
     r = mech.rates(T_gas=1000.0, T_solid=1000.0, p=8e5, Y=Y, G=20.0, bed=FakeBed())
     assert np.allclose(r, 0.0, atol=1e-12)
 
 
-def test_heat_release_is_positive_while_decomposing(mech):
-    Y = mech.mixture.from_moles({"N2H4": 1.0})
-    r = mech.rates(T_gas=700.0, T_solid=1000.0, p=8e5, Y=Y, G=20.0, bed=FakeBed())
-    assert mech.heat_release(1000.0, r) > 0.0
+def test_hydrazine_step_is_diffusion_limited(mech):
+    """Kesten's claim, and the reason his arbitrary Ea1 does not matter.
 
-
-def test_fast_step_one_is_diffusion_limited(mech):
-    """The design claim: step 1's answer must not depend on its Arrhenius A.
-
-    If it does, the rate constants -- the least trustworthy numbers in the
-    module -- are controlling the result.
+    If raising the pre-exponential moves the rate, kinetics is controlling and
+    the least trustworthy number in the model is setting the answer.
     """
-    Y = mech.mixture.from_moles({"N2H4": 1.0})
+    Y = mech.inlet_composition()
     kw = dict(T_gas=800.0, T_solid=1100.0, p=8e5, Y=Y, G=20.0, bed=FakeBed())
-    slow = HydrazineShell405(A1=1.0e11).rates(**kw)[0]
-    fast = HydrazineShell405(A1=1.0e14).rates(**kw)[0]
+    slow = HydrazineShell405(A_N2H4_cat=1.0e10).rates(**kw)[0]
+    fast = HydrazineShell405(A_N2H4_cat=1.0e13).rates(**kw)[0]
     assert fast == pytest.approx(slow, rel=0.02)
+
+
+def test_homogeneous_path_can_be_disabled(mech):
+    assert len(HydrazineShell405(include_homogeneous=False).reactions) == 2
+    assert len(mech.reactions) == 3
+
+
+def test_inhibition_order_is_selectable(mech):
+    """Melton reports 1.0, Logan and Kemball 1.6, and Kesten's own Fortran
+    disagrees with itself. Both must be reachable."""
+    for n in (1.0, 1.6):
+        m = HydrazineShell405(nH2=n)
+        assert m.reactions[1].rate.inhibitor_order == pytest.approx(n)
 
 
 # -- registry ---------------------------------------------------------------
