@@ -226,6 +226,8 @@ python run_fvm_nozzle.py [options]
   --restart FILE.npz     resume from a checkpoint
   --no-plots
 
+  --propellant NAME      propellant table from propellants/, e.g. af_m315e
+  --p0 BAR               chamber pressure for --propellant
   --chamber P0_BAR T0_K MW GAMMA
                          chamber conditions, as printed by run_thruster.py.
                          Without it the built-in LOX/LH2 block is used, which
@@ -336,6 +338,43 @@ directions — feed pressure for a given flow, or flow for a given feed pressure
 The loop uses the quasi-1-D nozzle because it needs many bed integrations. Run
 the CFD **once** afterwards on the converged chamber conditions, then feed its
 discharge coefficient back through `--cd`.
+
+### Other propellants
+
+The reacting bed model is hydrazine-specific by construction: its design
+variable is *how far ammonia dissociates*, and that is one number. Green
+propellants do not work that way — HAN and ADN products sit near equilibrium
+across many species, so composition follows from an equilibrium calculation
+rather than a single extent.
+
+Rather than reimplement CEA badly, `fvm/propellants.py` imports its answer. A
+propellant becomes a table of `(p, T0, MW, gamma, c*)` presented through the
+same interface the hydrazine mechanism offers, so the nozzle solver cannot tell
+the difference:
+
+```
+python run_fvm_nozzle.py --propellant af_m315e --p0 8.45
+```
+
+**No green propellant data ships with this repo.** Formulations and CEA results
+are yours to supply; plausible-looking invented numbers would be worse than
+none, because they would look authoritative. `write_template("af_m315e")`
+starts a file, `propellants/README.md` documents the format, and
+`TabulatedPropellant.from_cea()` reads a CEA output directly.
+
+`propellants/hydrazine_X084.csv` is generated from the reacting mechanism, not
+from CEA. It exists as a worked example and as a cross-check that both routes
+agree — they match to CSV rounding.
+
+Two things to expect when moving to green propellants:
+
+- **Bed preheat.** They need ~340–370 °C to ignite. That breaks the assumption
+  in `vapor_region_inlet` that the bed vaporises its feed from its own
+  decomposition; external preheat needs an added term.
+- **More viscous loss.** Hotter gas is less dense and more viscous. Through
+  this 0.29 mm throat, hydrazine sits at Re ≈ 6,200 and AF-M315E around 3,100,
+  so expect thrust efficiency between the 0.91 measured for hydrazine and the
+  0.79 for LOX/LH2.
 
 ### Provenance
 

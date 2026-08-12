@@ -33,8 +33,9 @@ from .mechanism import HydrazineShell405, get_mechanism
 from .plugflow import PlugFlowReactor, PlugFlowSolution
 from .thruster import ThrusterSystem, ThrusterSolution, vapor_region_inlet
 from .fitting import BedData, FitCase, fit_kinetics
+from .propellants import TabulatedPropellant, load_propellant, available_propellants
 from .solver import NozzleSolver
-from . import quasi1d, post, riemann, reconstruct, viscous, chem, catbed, mechanism, plugflow, thruster, fitting
+from . import quasi1d, post, riemann, reconstruct, viscous, chem, catbed, mechanism, plugflow, thruster, fitting, propellants
 
 __all__ = [
     "PerfectGas", "LOX_LH2_OF5", "COLD_N2", "G0", "R_UNIVERSAL",
@@ -46,8 +47,9 @@ __all__ = [
     "PlugFlowReactor", "PlugFlowSolution",
     "ThrusterSystem", "ThrusterSolution", "vapor_region_inlet",
     "BedData", "FitCase", "fit_kinetics",
+    "TabulatedPropellant", "load_propellant", "available_propellants",
     "quasi1d", "post", "riemann", "reconstruct", "viscous",
-    "chem", "catbed", "mechanism", "plugflow", "thruster", "fitting",
+    "chem", "catbed", "mechanism", "plugflow", "thruster", "fitting", "propellants",
 ]
 
 __version__ = "0.1.0"

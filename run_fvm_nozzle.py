@@ -40,7 +40,14 @@ MU_OMEGA = 0.7
 
 
 def build(args):
-    if args.chamber is not None:
+    if args.propellant is not None:
+        from fvm.propellants import load as load_propellant
+        prop = load_propellant(args.propellant)
+        p0 = (args.p0 * 1e5) if args.p0 else float(prop.p[0])
+        gas = prop.perfect_gas(p0)
+        T0 = prop.chamber_conditions(p0)["T"]
+        print(prop.summary(p0))
+    elif args.chamber is not None:
         p0_bar, T0_K, MW, gamma = args.chamber
         mu_ref = (args.mu_ref if args.mu_ref
                   else MU_REF_1000K * (T0_K / 1000.0) ** MU_OMEGA)
@@ -72,6 +79,12 @@ def build(args):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--propellant', default=None, metavar='NAME',
+                    help='propellant table from propellants/ (see '
+                         'propellants/README.md). Use --p0 to pick the '
+                         'chamber pressure.')
+    ap.add_argument('--p0', type=float, default=None, metavar='BAR',
+                    help='chamber pressure for --propellant')
     ap.add_argument('--chamber', type=float, nargs=4, default=None,
                     metavar=('P0_BAR', 'T0_K', 'MW', 'GAMMA'),
                     help='chamber conditions, as printed by run_thruster.py. '
@@ -123,7 +136,7 @@ def main():
     print(f"\n{gas}")
     print(f"p0 = {bcs.p0 / 1e5:.4f} bar    T0 = {bcs.T0:.1f} K    "
           f"p_amb = {P_a.to('Torr').value:.2f} Torr")
-    if args.chamber is None:
+    if args.chamber is None and args.propellant is None:
         print("NOTE: using the built-in LOX/LH2 gas block, which is not what "
               "this thruster burns.\n      Pass --chamber with the values "
               "run_thruster.py prints for the real operating point.")
