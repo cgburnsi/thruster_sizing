@@ -53,6 +53,7 @@ as the inlet is how this model is validated against his.
 """
 import numpy as np
 from scipy.integrate import solve_ivp
+from scipy.optimize import brentq
 
 from . import chem
 
@@ -191,15 +192,12 @@ class PlugFlowReactor:
             # No sign change: the exchange term dominates everywhere, which
             # means the solid is essentially at the gas temperature.
             return T_gas if abs(f_lo) < abs(f_hi) else hi
-        for _ in range(60):
-            mid = 0.5 * (lo + hi)
-            if residual(mid) * f_lo > 0.0:
-                lo = mid
-            else:
-                hi = mid
-            if hi - lo < tol:
-                break
-        return 0.5 * (lo + hi)
+        # Brent rather than bisection. The bracket is wide (T_gas +/- 2500 K)
+        # so bisection needed ~24 evaluations to reach tolerance, and each one
+        # costs a full rate and heat-release evaluation -- it dominated the
+        # profile. Brent gets there in roughly a third of that.
+        return float(brentq(residual, lo, hi, xtol=tol, rtol=1e-10,
+                            maxiter=60, disp=False))
 
     # -- right-hand side --------------------------------------------------
     def _unpack(self, z, state, G):

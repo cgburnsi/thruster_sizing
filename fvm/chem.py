@@ -58,6 +58,11 @@ class Species:
         self.R = RU / self.MW          # specific gas constant [J/(kg*K)]
 
     def _coeffs(self, T):
+        # Scalar fast path. The bed solver evaluates these one station at a
+        # time, and routing a single float through asarray/reshape/where costs
+        # far more than the polynomial itself -- it dominated the profile.
+        if type(T) is float or np.isscalar(T):
+            return self.low if T < self.T_mid else self.high
         T = np.asarray(T, dtype=float)
         lo = self.low.reshape(7, *([1] * T.ndim))
         hi = self.high.reshape(7, *([1] * T.ndim))
@@ -65,14 +70,19 @@ class Species:
 
     def cp_mole(self, T):
         """Molar heat capacity at constant pressure [J/(kmol*K)]."""
-        T = np.asarray(T, dtype=float)
         a = self._coeffs(T)
+        if a is self.low or a is self.high:          # scalar path
+            return RU * (a[0] + T * (a[1] + T * (a[2] + T * (a[3] + T * a[4]))))
+        T = np.asarray(T, dtype=float)
         return RU * (a[0] + a[1] * T + a[2] * T ** 2 + a[3] * T ** 3 + a[4] * T ** 4)
 
     def h_mole(self, T):
         """Molar enthalpy [J/kmol], including enthalpy of formation."""
-        T = np.asarray(T, dtype=float)
         a = self._coeffs(T)
+        if a is self.low or a is self.high:          # scalar path
+            return RU * (T * (a[0] + T * (a[1] / 2.0 + T * (a[2] / 3.0
+                         + T * (a[3] / 4.0 + T * a[4] / 5.0)))) + a[5])
+        T = np.asarray(T, dtype=float)
         return RU * T * (a[0] + a[1] * T / 2.0 + a[2] * T ** 2 / 3.0
                          + a[3] * T ** 3 / 4.0 + a[4] * T ** 4 / 5.0 + a[5] / T)
 
